@@ -1,0 +1,33 @@
+{
+  "name": "postcss-fluid-variants",
+  "version": "0.1.0",
+  "description": "Make Tailwind's responsive utilities fluid, after the fact. Drop-in, no new syntax.",
+  "type": "module",
+  "exports": "./index.js",
+  "files": [
+    "index.js"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "peerDependencies": {
+    "postcss": "^8.4.0"
+  },
+  "devDependencies": {
+    "postcss": "^8.4.0"
+  },
+  "keywords": [
+    "postcss",
+    "postcss-plugin",
+    "tailwindcss",
+    "tailwind",
+    "fluid",
+    "clamp",
+    "responsive",
+    "css-functions"
+  ],
+  "license": "MIT"
+}
