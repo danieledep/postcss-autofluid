@@ -89,6 +89,19 @@ Default properties are the length-valued ones where interpolation makes sense: m
 
 Breakpoints and cascade layers are discovered from Tailwind's output, not configured: custom `--breakpoint-*` values, one-off `min-[900px]:` variants and Tailwind v3's `min-width:` queries all work, and twins land in whatever layer (or no layer) the originals use.
 
+## Cost
+
+Measured on four public Tailwind codebases, built with Tailwind 4.3 and minified with Lightning CSS. The overhead is one twin per utility of a property that varies across breakpoints somewhere in the build (properties that never vary are skipped entirely), plus the shared functions and one `@property` per token.
+
+| codebase | utilities | fluid twins | minified | min + brotli |
+|---|---|---|---|---|
+| cruip landing page template | 371 | 103 | 45 → 56 kB (+24%) | 7.1 → 8.3 kB (+17%) |
+| cruip open react template | 283 | 68 | 42 → 51 kB (+21%) | 6.1 → 7.1 kB (+16%) |
+| tailwindcss.com | 4544 | 1163 | 448 → 546 kB (+22%) | 44 → 52 kB (+17%) |
+| shadcn/ui monorepo | 2488 | 1129 | 280 → 371 kB (+33%) | 34 → 41 kB (+22%) |
+
+Twins compress well because they repeat selectors and values already in the file. Expect roughly a fifth on top of your CSS over the wire.
+
 ## What is and isn't picked up
 
 Every rule that has the specificity of one class — a single class selector, optionally wrapped in `:where()` the way class-based `dark:` is — and sits in at-rules only. So:

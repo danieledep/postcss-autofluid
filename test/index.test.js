@@ -87,13 +87,23 @@ test('emits one wrapper per fluid property', async () => {
   assert.doesNotMatch(out, /@function --fl-display/)
 })
 
-test('registers every token as non-inherited', async () => {
+test('registers every published token as non-inherited, and nothing else', async () => {
   const out = flat(await appendix(fixture))
-  for (const key of ['0', '48rem', '80rem', '96rem']) {
+  for (const key of ['0', '48rem', '96rem']) {
     assert.match(out, new RegExp(`@property --fl-margin-top-${key} \\{ syntax: "\\*"; inherits: false; \\}`))
-    assert.match(out, new RegExp(`@property --fl-font-size-${key} \\{`))
   }
+  assert.match(out, /@property --fl-font-size-0 \{/)
+  assert.match(out, /@property --fl-font-size-80rem \{/)
+  assert.doesNotMatch(out, /@property --fl-font-size-48rem/)
+  assert.doesNotMatch(out, /@property --fl-margin-top-80rem/)
   assert.doesNotMatch(out, /@property --fl-display/)
+})
+
+test('skips properties that never vary across breakpoints', async () => {
+  const css = `@layer utilities { .w-full { width: 100% } .mt-6 { margin-top: 1.5rem } @media (width >= 48rem) { .md\\:mt-8 { margin-top: 2rem } } }`
+  const out = await appendix(css)
+  assert.match(out, /--fl-margin-top-0/)
+  assert.doesNotMatch(out, /w-full|--fl-width/)
 })
 
 test('twins live in the same layer as their originals', async () => {
@@ -147,7 +157,7 @@ test('ignores non-fluid properties and selectors with extra specificity', async 
 })
 
 test('accepts the zero-specificity :where() wrapper of class-based variants', async () => {
-  const css = `.mt-6 { margin-top: 1.5rem } .dark\\:mt-10:where(.dark, .dark *) { margin-top: 2.5rem }`
+  const css = `.mt-6 { margin-top: 1.5rem } .dark\\:mt-10:where(.dark, .dark *) { margin-top: 2.5rem } @media (width >= 48rem) { .md\\:mt-8 { margin-top: 2rem } }`
   const out = flat(await appendix(css))
   assert.match(out, /\.dark\\:mt-10:where\(\.dark, \.dark \*\) \{ --fl-margin-top-0: 2\.5rem; margin-top: --fl-margin-top\(\); \}/)
 })

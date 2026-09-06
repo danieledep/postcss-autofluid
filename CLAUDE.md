@@ -37,8 +37,14 @@ assembles whatever co-occurs on an element.
   it win precisely where the original would have won. The only thing stripped is
   the breakpoint media — and only from the token, never from the property.
 - One shared `@function --fl(...)` for the math. One thin `--fl-<prop>()` wrapper
-  per property. One `@property … inherits: false` per token. Size stays
-  near-linear in the number of distinct utilities, not exponential in breakpoints.
+  per property. One `@property … inherits: false` per *published* token. Size
+  stays near-linear in the number of distinct utilities, not exponential in
+  breakpoints. Twins exist only for properties that have at least one responsive
+  value in the build; everything else is untouched. Measured on real codebases
+  the appendix is ~75% twins, four base tokens for every responsive one, and
+  costs +16–24% over the wire (numbers in the README). The base twins are the
+  floor: without knowing the markup there is no way to tell which base utility
+  will share an element with a responsive one.
 - Everything inside `@supports (top: --fl())` so non-supporting browsers get
   plain Tailwind. There is deliberately no degraded middle state.
 - Breakpoints and layers are discovered from the output, not configured.

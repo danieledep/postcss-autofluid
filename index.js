@@ -119,28 +119,36 @@ export default function fluidVariants(options = {}) {
     postcssPlugin: 'postcss-fluid-variants',
 
     OnceExit(root, { AtRule, Rule, Declaration }) {
-      const widths = new Map()
-      const props = new Set()
       const found = []
-
       root.walkRules((rule) => {
         if (!UTILITY.test(rule.selector)) return
         const context = contextOf(rule)
         if (!context) return
 
-        const decls = rule.nodes.filter(
-          (node) => node.type === 'decl' && fluidable.has(node.prop) && !node.important,
-        )
-        if (!decls.length) return
-
-        for (const decl of decls) {
-          if (!KEYWORD.test(decl.value.trim())) props.add(decl.prop)
-        }
-        if (context.width !== BASE) widths.set(context.width.key, context.width)
-        found.push({ selector: rule.selector, ...context, decls })
+        const decls = rule.nodes
+          .filter((node) => node.type === 'decl' && fluidable.has(node.prop) && !node.important)
+          .map(({ prop, value }) => ({ prop, value, keyword: KEYWORD.test(value.trim()) }))
+        if (decls.length) found.push({ selector: rule.selector, ...context, decls })
       })
 
+      // A property with no responsive value anywhere in the build has nothing
+      // to interpolate towards, so it needs no twins at all.
+      const props = new Set()
+      for (const { width, decls } of found) {
+        if (width === BASE) continue
+        for (const { prop, keyword } of decls) if (!keyword) props.add(prop)
+      }
       if (!props.size) return
+
+      const widths = new Map()
+      const published = new Set()
+      for (const { width, decls } of found) {
+        for (const { prop, keyword } of decls) {
+          if (keyword || !props.has(prop)) continue
+          if (width !== BASE) widths.set(width.key, width)
+          published.add(token(prop, width.key))
+        }
+      }
 
       const bps = [...widths.values()].sort((a, b) => a.px - b.px)
       const keys = [BASE.key, ...bps.map((b) => b.key)]
@@ -192,14 +200,13 @@ export default function fluidVariants(options = {}) {
 
       // Tokens must not inherit, or a parent's breakpoint value would leak into
       // every child that has a fluid twin of its own.
-      const registrations = [...props].flatMap((prop) =>
-        keys.map((key) =>
+      const registrations = [...published].map(
+        (name) =>
           new AtRule({
             name: 'property',
-            params: token(prop, key),
+            params: name,
             nodes: [decl('syntax', '"*"'), decl('inherits', 'false')],
           }),
-        ),
       )
 
       const supports = new AtRule({
@@ -231,9 +238,9 @@ export default function fluidVariants(options = {}) {
       for (const { selector, width, ancestors, conditions, decls } of found) {
         const tokens = []
         const values = []
-        for (const { prop, value } of decls) {
+        for (const { prop, value, keyword } of decls) {
           if (!props.has(prop)) continue
-          if (KEYWORD.test(value.trim())) {
+          if (keyword) {
             values.push(decl(prop, value))
           } else {
             tokens.push(decl(token(prop, width.key), value))
