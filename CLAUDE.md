@@ -32,35 +32,70 @@ assembles whatever co-occurs on an element.
 ## Design constraints — keep these
 
 - Leave Tailwind's original rules untouched. Append twins; never mutate.
+- A twin mirrors its original's cascade position exactly: same selector, same
+  at-rule ancestors (`@layer` included), same relative order. That is what makes
+  it win precisely where the original would have won. The only thing stripped is
+  the breakpoint media — and only from the token, never from the property.
 - One shared `@function --fl(...)` for the math. One thin `--fl-<prop>()` wrapper
-  per property. One small twin rule per utility. Size should stay near-linear in
-  the number of distinct utilities, not exponential in breakpoints.
+  per property. One `@property … inherits: false` per token. Size stays
+  near-linear in the number of distinct utilities, not exponential in breakpoints.
 - Everything inside `@supports (top: --fl())` so non-supporting browsers get
   plain Tailwind. There is deliberately no degraded middle state.
-- Breakpoints are discovered from the output, not configured.
-- No dependencies beyond `postcss`. Tests use `node:test`.
+- Breakpoints and layers are discovered from the output, not configured.
+- No dependencies beyond `postcss`. Tests use `node:test`; the browser test
+  skips itself when `playwright` / `@tailwindcss/postcss` are absent.
 
-## Runtime assumptions that still need verifying in Chrome 140+
+## Things that looked fine and were not (all fixed, all covered by tests)
 
-These are spec-level and could not be checked in the environment this was written in:
+Found by rendering real Tailwind 4.3 and 3.4 output in Chromium 141 and diffing
+computed styles against plain Tailwind at a dozen widths:
 
-1. Passing an unset `var(--x)` as a `@function` argument yields a
+- Custom properties inherit. Without `@property … inherits: false`, a child with
+  `mt-4` inside an `md:mt-8` parent got 32px.
+- An unconditional twin for `md:px-12` set `padding-inline` to an invalid value
+  below `md`, which reset `padding-left` from the `p-4` shorthand to 0. Hence:
+  the property is only handed over inside the original's media.
+- Unconditional twins outranked every same-specificity variant emitted earlier
+  (`dark:`, `print:`, `max-md:`, `@md:`, `md:max-lg:`, class-based `dark:` via
+  `:where()`) and every keyword (`md:mt-auto`). Hence: mirror the ancestors,
+  re-assert keywords.
+- Tailwind escapes a leading digit as `\32 ` (hex escape + space); `2xl:` was
+  silently skipped.
+- Tailwind v3 output is unlayered; a hard-coded `@layer utilities` would have
+  ranked *below* it and never applied.
+
+## Runtime assumptions — verified in Chromium 141
+
+1. An unset `var(--x)` passed as a `@function` argument yields a
    guaranteed-invalid parameter, so `style(--param)` is false and the `var()`
    fallback chain engages.
 2. Boolean-form `style(--param)` is accepted in `if()` inside a function body.
 3. `@supports (top: --fl())` is true only where custom functions are supported.
+4. `@function`, `@property` and `@layer` are all honoured inside `@supports`.
+5. esbuild, Lightning CSS and cssnano keep the output semantically intact.
 
-If 1 or 2 fails, the mechanical fix is: emit a parallel `--fl-<prop>-<bp>-w: <bp>`
-width token on each twin, and replace the `if(style())` lookups in `--fl()` with
-the same nested `var()` chains the values already use.
+## Known limitation
+
+`line-height` mixes unitless ratios and lengths across Tailwind's utilities.
+`calc(<length> + (<number> - <length>) * …)` is invalid, so in any band whose
+two nearest tokens differ in kind the property is invalid at computed-value
+time and falls back to `unset` (inherited, for `line-height`). `leading-6
+md:leading-none` is correct at `md`+ and inherits below. There is no CSS-level
+fix short of knowing which theme variables are ratios; documented in the README.
+
+## Semantics worth knowing
+
+A non-breakpoint variant becomes the *base* token under its condition. That
+matches Tailwind for every built-in media variant (ordered before breakpoints)
+and differs for custom variants ordered after them (class-based `dark:`), where
+plain Tailwind lets the variant win at all widths. Documented; not a bug.
 
 ## Possible next steps
 
-- A browser test (Playwright) that renders a fixture in Chromium and asserts
-  computed `margin-top` at a few viewport widths.
-- `max-*` variants, container queries (`@md:`), and `--tw-*` composed values are
-  currently skipped by design; revisit only with a concrete need.
-- A Vite/Lightning CSS pass after this plugin must not strip `@function`.
+- Container-query breakpoints (`@md:`) currently act as conditions on the base
+  token. A second interpolator over `100cqw` would make them fluid too.
+- A Vite/Lightning CSS pass after this plugin must not strip `@function`; the
+  three common minifiers were checked, others were not.
 
 ## Origin
 

@@ -5,17 +5,23 @@
  *
  *   @media (width >= 48rem) { .md\:mt-8 { margin-top: calc(var(--spacing) * 8) } }
  *
- * — it appends an unconditional twin that publishes the value as a
- * breakpoint-tagged token and hands the property to one shared CSS function:
+ * — it appends a twin that publishes the value as a breakpoint-tagged token and
+ * hands the property to one shared CSS function:
  *
- *   .md\:mt-8 { --fl-margin-top-48rem: calc(var(--spacing) * 8); margin-top: --fl-margin-top() }
+ *   .md\:mt-8 { --fl-margin-top-48rem: calc(var(--spacing) * 8) }
+ *   @media (width >= 48rem) { .md\:mt-8 { margin-top: --fl-margin-top() } }
  *
  * The browser's cascade then assembles whichever tokens co-occur on an element.
  * Two or more tokens for a property interpolate between their breakpoints; a
  * single token collapses to itself, which is exactly plain Tailwind behaviour.
  * No markup changes, no new syntax.
  *
- * Runtime: Chromium 140+ (`@function`, `if()`, typed calc arithmetic).
+ * A twin mirrors its original exactly — same selector, same at-rule ancestors
+ * (layers included), same order — so it wins precisely where the original would
+ * have won. The only difference is that the token is published without the
+ * breakpoint media, so the band below can already interpolate towards it.
+ *
+ * Runtime: Chromium 139+ (`@function`, `if()`, typed calc arithmetic).
  * Everything is wrapped in `@supports`, so other browsers get Tailwind as-is.
  */
 
@@ -40,8 +46,13 @@ function expand(...shorthands) {
   )
 }
 
-/** A single class selector: no combinators, no pseudo, colons only if escaped. */
-const SINGLE_CLASS = /^\.(?:\\.|[^\s\\:>+~,[\].#*])+$/
+/**
+ * A rule with the specificity of one class: a single class selector (escapes
+ * allowed, e.g. `.\32 xl\:mt-11`) optionally followed by `:where(…)`, which is
+ * how Tailwind wraps zero-specificity variants such as class-based `dark:`.
+ * Anything more specific keeps beating the twins on its own and is left alone.
+ */
+const UTILITY = /^\.(?:\\[0-9a-f]{1,6} ?|\\.|[^\s\\:>+~,[\].#*()])+(?::where\((?:[^()]|\([^()]*\))*\))*$/i
 
 /** Tailwind v4 (`width >= 48rem`) and v3 (`min-width: 48rem`) breakpoint queries. */
 const MIN_WIDTH = /^\(\s*(?:min-width\s*:|width\s*>=)\s*([\d.]+)(rem|em|px)\s*\)$/
@@ -55,24 +66,31 @@ const BASE = { key: '0', raw: null, px: 0 }
 
 /**
  * Where does this rule sit in Tailwind's output?
- * Returns BASE for an unconditional utility, a width descriptor for a
- * `min-width` variant, or null for anything else (hover, dark, container…).
+ * Returns the at-rule ancestors (outermost first), the breakpoint they contain —
+ * BASE when there is none — and the remaining ancestors the token must keep.
+ * Null for rules nested inside other rules.
  */
-function breakpointOf(rule) {
-  let parent = rule.parent
-  let width = BASE
-
-  if (parent?.type === 'atrule' && parent.name === 'media') {
-    const match = MIN_WIDTH.exec(parent.params)
-    if (!match) return null
-    const [, number, unit] = match
-    const raw = number + unit
-    width = { key: raw.replace('.', '_'), raw, px: Number(number) * UNIT_PX[unit] }
-    parent = parent.parent
+function contextOf(rule) {
+  const ancestors = []
+  for (let parent = rule.parent; parent.type !== 'root'; parent = parent.parent) {
+    if (parent.type !== 'atrule') return null
+    ancestors.unshift(parent)
   }
 
-  while (parent?.type === 'atrule' && parent.name === 'layer') parent = parent.parent
-  return parent?.type === 'root' ? width : null
+  let width = BASE
+  let breakpoint = null
+  for (const atRule of ancestors) {
+    const match = atRule.name === 'media' && MIN_WIDTH.exec(atRule.params)
+    if (!match) continue
+    const [, number, unit] = match
+    const px = Number(number) * UNIT_PX[unit]
+    if (px <= width.px) continue
+    const raw = number + unit
+    width = { key: raw.replace('.', '_'), raw, px }
+    breakpoint = atRule
+  }
+
+  return { ancestors, width, conditions: ancestors.filter((atRule) => atRule !== breakpoint) }
 }
 
 /** Nest `var()` fallbacks: [a, b] + tail → var(--a, var(--b, tail)) */
@@ -89,7 +107,6 @@ export default function fluidVariants(options = {}) {
   const {
     prefix = 'fl',
     minWidth = '20rem',
-    layer = 'utilities',
     properties = DEFAULT_PROPERTIES,
   } = options
 
@@ -107,24 +124,23 @@ export default function fluidVariants(options = {}) {
       const found = []
 
       root.walkRules((rule) => {
-        if (!SINGLE_CLASS.test(rule.selector)) return
-        const width = breakpointOf(rule)
-        if (!width) return
+        if (!UTILITY.test(rule.selector)) return
+        const context = contextOf(rule)
+        if (!context) return
 
         const decls = rule.nodes.filter(
-          (node) =>
-            node.type === 'decl' &&
-            fluidable.has(node.prop) &&
-            !KEYWORD.test(node.value.trim()),
+          (node) => node.type === 'decl' && fluidable.has(node.prop) && !node.important,
         )
         if (!decls.length) return
 
-        if (width !== BASE) widths.set(width.key, width)
-        for (const { prop } of decls) props.add(prop)
-        found.push({ selector: rule.selector, key: width.key, decls })
+        for (const decl of decls) {
+          if (!KEYWORD.test(decl.value.trim())) props.add(decl.prop)
+        }
+        if (context.width !== BASE) widths.set(context.width.key, context.width)
+        found.push({ selector: rule.selector, ...context, decls })
       })
 
-      if (!found.length) return
+      if (!props.size) return
 
       const bps = [...widths.values()].sort((a, b) => a.px - b.px)
       const keys = [BASE.key, ...bps.map((b) => b.key)]
@@ -174,24 +190,66 @@ export default function fluidVariants(options = {}) {
         }),
       )
 
-      // ── The unconditional twins ───────────────────────────────────────────
-      const twins = found.map(({ selector, key, decls }) =>
-        new Rule({
-          selector,
-          nodes: decls.flatMap(({ prop, value }) => [
-            decl(token(prop, key), value),
-            decl(prop, `${fn}-${prop}()`),
-          ]),
-        }),
+      // Tokens must not inherit, or a parent's breakpoint value would leak into
+      // every child that has a fluid twin of its own.
+      const registrations = [...props].flatMap((prop) =>
+        keys.map((key) =>
+          new AtRule({
+            name: 'property',
+            params: token(prop, key),
+            nodes: [decl('syntax', '"*"'), decl('inherits', 'false')],
+          }),
+        ),
       )
 
       const supports = new AtRule({
         name: 'supports',
         params: `(top: ${fn}())`,
-        nodes: [interpolator, ...wrappers, ...twins],
+        nodes: [interpolator, ...wrappers, ...registrations],
       })
 
-      root.append(layer ? new AtRule({ name: 'layer', params: layer, nodes: [supports] }) : supports)
+      // ── The twins, in the same at-rule context as their originals ─────────
+      // Identical ancestor chains share one nested group, so the output stays
+      // as compact as Tailwind's own. First-seen order follows source order.
+      const groups = new Map()
+      const groupFor = (ancestors) => {
+        let parent = supports
+        let path = ''
+        for (const { name, params } of ancestors) {
+          path += `@${name} ${params}\n`
+          let group = groups.get(path)
+          if (!group) {
+            group = new AtRule({ name, params })
+            parent.append(group)
+            groups.set(path, group)
+          }
+          parent = group
+        }
+        return parent
+      }
+
+      for (const { selector, width, ancestors, conditions, decls } of found) {
+        const tokens = []
+        const values = []
+        for (const { prop, value } of decls) {
+          if (!props.has(prop)) continue
+          if (KEYWORD.test(value.trim())) {
+            values.push(decl(prop, value))
+          } else {
+            tokens.push(decl(token(prop, width.key), value))
+            values.push(decl(prop, `${fn}-${prop}()`))
+          }
+        }
+
+        if (tokens.length && width !== BASE) {
+          groupFor(conditions).append(new Rule({ selector, nodes: tokens }))
+          groupFor(ancestors).append(new Rule({ selector, nodes: values }))
+        } else if (tokens.length || values.length) {
+          groupFor(ancestors).append(new Rule({ selector, nodes: [...tokens, ...values] }))
+        }
+      }
+
+      root.append(supports)
     },
   }
 }
