@@ -49,6 +49,9 @@ const fixture = `
 const run = async (css, opts) =>
   (await postcss([fluidVariants(opts)]).process(css, { from: undefined })).css
 
+const warningsFor = async (css, opts) =>
+  (await postcss([fluidVariants(opts)]).process(css, { from: undefined })).warnings().map((w) => w.text)
+
 const appendix = async (css, opts) => {
   const out = await run(css, opts)
   return out.slice(out.indexOf('@supports'))
@@ -190,4 +193,95 @@ test('gives every generated node a source location', async () => {
   assert.deepEqual(missing, [])
   const twin = root.last.nodes.find((n) => n.name === 'layer').nodes.find((n) => n.selector === '.mt-6')
   assert.equal(twin.source.start.line, fixture.split('\n').findIndex((l) => l.includes('.mt-6 {')) + 1)
+})
+
+/**
+ * Turn flat output — `@media { .sel { … } }` — into the nested shape Tailwind
+ * emits when its optimizer is off: `.sel { @media { … } }`. Only top-level
+ * media whose children are all rules are inverted, which is enough to mirror
+ * every flat fixture here.
+ */
+function nest(css) {
+  const root = postcss.parse(css)
+  root.walkAtRules('media', (at) => {
+    if (at.parent?.type !== 'root') return
+    const replacements = []
+    at.each((rule) => {
+      if (rule.type !== 'rule') return
+      const inner = at.clone({ nodes: [] })
+      rule.each((node) => inner.append(node.clone()))
+      replacements.push(rule.clone({ nodes: [inner] }))
+    })
+    if (replacements.length === at.nodes.length) at.replaceWith(replacements)
+  })
+  return root.toString()
+}
+
+const equivalent = async (css, opts) => {
+  const flat = await appendix(css, opts)
+  const nested = await appendix(nest(css), opts)
+  assert.equal(nested, flat)
+  return flat
+}
+
+test('reads a breakpoint nested inside its rule, not just above it', async () => {
+  const out = await appendix(
+    `.md\\:mt-8 { @media (width >= 48rem) { margin-top: 2rem } } .mt-6 { margin-top: 1.5rem }`,
+  )
+  assert.match(flat(out), /\.md\\:mt-8 \{ --fl-margin-top-48rem: 2rem; \}/)
+  assert.match(flat(out), /@media \(width >= 48rem\) \{ \.md\\:mt-8 \{ margin-top: --fl-margin-top\(\); \}/)
+})
+
+test('flat and nested input produce identical appendices', async () => {
+  // simple responsive
+  assert.match(
+    await equivalent(`.mt-6 { margin-top: 1.5rem } @media (width >= 48rem) { .md\\:mt-8 { margin-top: 2rem } } @media (width >= 64rem) { .lg\\:mt-12 { margin-top: 3rem } }`),
+    /@function --fl\(--v0, --v48rem, --v64rem\)/,
+  )
+  // two properties under one breakpoint share a group
+  assert.match(
+    await equivalent(`.p-4 { padding: 1rem } @media (width >= 48rem) { .md\\:p-8 { padding: 2rem; margin-top: 2rem } }`),
+    /@media \(width >= 48rem\)/,
+  )
+  // an ancestor at-rule and a descendant one combine in the right order
+  assert.match(
+    await equivalent(`@layer utilities { .mt-6 { margin-top: 1.5rem } } @media (width >= 48rem) { .md\\:mt-8 { margin-top: 2rem } }`),
+    /@layer utilities/,
+  )
+  // a keyword value emits no functions at all
+  assert.doesNotMatch(
+    await equivalent(`.mt-6 { margin-top: 1.5rem } @media (width >= 48rem) { .md\\:mt-auto { margin-top: auto } }`),
+    /--fl-margin-top-48rem:/,
+  )
+})
+
+test('skips &-nested rules in the nested shape, as it does when flattened', async () => {
+  const out = await appendix(
+    `.mt-6 { margin-top: 1.5rem } @media (width >= 48rem) { .md\\:mt-8 { margin-top: 2rem } } .hover\\:mt-8 { &:hover { @media (width >= 48rem) { margin-top: 2rem } } }`,
+  )
+  assert.doesNotMatch(out, /hover/)
+})
+
+test('reads a breakpoint nested two deep inside a rule', async () => {
+  const out = flat(await appendix(
+    `.mt-6 { margin-top: 1.5rem } .dark\\:md\\:mt-4 { @media (prefers-color-scheme: dark) { @media (width >= 48rem) { margin-top: 1rem } } }`,
+  ))
+  assert.match(out, /@media \(prefers-color-scheme: dark\) \{ \.dark\\:md\\:mt-4 \{ --fl-margin-top-48rem: 1rem; \} @media \(width >= 48rem\) \{ \.dark\\:md\\:mt-4 \{ margin-top: --fl-margin-top\(\); \}/)
+})
+
+test('warns instead of silently emitting nothing when responsive values go unread', async () => {
+  // every responsive utility is behind extra specificity, so none is readable
+  const warnings = await warningsFor(`@media (width >= 48rem) { .md\\:mt-8 > p { margin-top: 2rem } }`)
+  assert.equal(warnings.length, 1)
+  assert.match(warnings[0], /nothing was made fluid/)
+})
+
+test('stays silent when there is simply nothing responsive to make fluid', async () => {
+  for (const css of [
+    `.flex { display: flex }`,
+    `@media (width >= 48rem) { .md\\:flex { display: flex } }`,
+    `@media (width >= 48rem) { .md\\:mt-auto { margin-top: auto } }`,
+  ]) {
+    assert.deepEqual(await warningsFor(css), [], css)
+  }
 })

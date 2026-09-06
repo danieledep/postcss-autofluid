@@ -1,6 +1,6 @@
 {
   "name": "postcss-fluid-variants",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Make Tailwind's responsive utilities fluid, after the fact. Drop-in, no new syntax.",
   "exports": "./index.js",
   "files": [

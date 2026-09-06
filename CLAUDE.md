@@ -47,6 +47,16 @@ assembles whatever co-occurs on an element.
   will share an element with a responsive one.
 - Everything inside `@supports (top: --fl())` so non-supporting browsers get
   plain Tailwind. There is deliberately no degraded middle state.
+- Input arrives in two shapes. Tailwind flattens `@media { .sel { … } }` only
+  when its optimizer runs; with it off (dev and watch builds) the query sits
+  *inside* the rule. Both carry the same facts, so the walk starts at each
+  declaration and climbs, which reads either. Never assume the breakpoint is an
+  ancestor of the rule. Twins are always emitted flat.
+- Group reuse is run-local, not global: a chain is reused only while it is still
+  the most recent thing at its level, ignoring inert token-only rules. Merging
+  two non-contiguous uses of one chain moves a twin backwards past rules it must
+  beat. Tailwind's `.container` is the case that exposes this — it emits its own
+  per-breakpoint blocks early, far from the variant blocks.
 - Breakpoints and layers are discovered from the output, not configured.
 - No dependencies beyond `postcss`. Tests use `node:test`; the browser test
   skips itself when `playwright` / `@tailwindcss/postcss` are absent.
@@ -69,6 +79,12 @@ computed styles against plain Tailwind at a dozen widths:
   silently skipped.
 - Tailwind v3 output is unlayered; a hard-coded `@layer utilities` would have
   ranked *below* it and never applied.
+- Walking up from the *rule* missed every declaration in unoptimized Tailwind
+  output, where the breakpoint is nested inside the rule. `props` came out
+  empty and the plugin returned having emitted nothing — no error, no warning,
+  and `@supports` made it look like ordinary lack of browser support. Measured
+  on Tailwind 4.1.13: 6 responsive declarations, 0 `@function` blocks emitted.
+  A no-op with responsive values present now warns.
 
 ## Runtime assumptions — verified in Chromium 141
 

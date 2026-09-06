@@ -45,7 +45,9 @@ mix.options({
 
 ### Vite
 
-With `@tailwindcss/vite`, keep Tailwind in `vite.config.js` and add this plugin to `postcss.config.js` as above; Vite runs PostCSS after the Tailwind plugin, so the order is right by construction. `@tailwindcss/postcss` in `postcss.config.js` works too.
+With `@tailwindcss/vite`, keep Tailwind in `vite.config.js` and add this plugin to `postcss.config.js` as above; Vite runs PostCSS after the Tailwind plugin, so the *order* is right by construction. `@tailwindcss/postcss` in `postcss.config.js` works too.
+
+That says nothing about the *shape* of what arrives. With its optimizer off — dev and watch builds — Tailwind emits nested CSS, with the media query inside the rule rather than around it. Both shapes are read, so dev and production agree; older releases of this plugin silently emitted nothing in dev.
 
 One caveat: Vite's `css.transformer: 'lightningcss'` replaces PostCSS entirely, so *no* PostCSS plugin runs there and the output is plain Tailwind. Leave the transformer at its default; using Lightning CSS only as the minifier (`build.cssMinify: 'lightningcss'`) is fine.
 
@@ -137,6 +139,10 @@ Every rule that has the specificity of one class — a single class selector, op
 - `md:mt-auto`, `max-w-none`, `w-fit` — not interpolable; the twin re-asserts the keyword so it keeps winning
 - `mt-6!` — left alone; `!important` opts a declaration out
 - `md:flex`, `md:bg-red-500` — not a fluid property
+
+Tailwind's own `container` class is picked up like anything else: it sets `max-width` once per breakpoint, so those steps become an interpolation and the container tracks the viewport instead of jumping. Drop `max-width` from `properties` to keep the steps.
+
+If a stylesheet has responsive values for fluid properties and none of them can be read, the plugin emits a PostCSS warning rather than quietly producing nothing.
 
 In other words a non-breakpoint variant answers "what is the value at this breakpoint under this condition", and the interpolation runs through it. This matches Tailwind wherever Tailwind's own variant order puts the condition before the breakpoints (all built-in media variants). For a custom variant Tailwind orders *after* the breakpoints, such as class-based `dark`, `mt-6 dark:mt-10 md:mt-8` is "dark base is 40, md is 32" here, where plain Tailwind would let `dark:` win at every width. Stack them (`dark:md:mt-8`) to say what you mean.
 

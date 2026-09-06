@@ -65,17 +65,34 @@ const UNIT_PX = { px: 1, rem: 16, em: 16 }
 const BASE = { key: '0', raw: null, px: 0 }
 
 /**
- * Where does this rule sit in Tailwind's output?
- * Returns the at-rule ancestors (outermost first), the breakpoint they contain —
- * BASE when there is none — and the remaining ancestors the token must keep.
- * Null for rules nested inside other rules.
+ * Where does this declaration sit in Tailwind's output?
+ * Returns its rule, the at-rule ancestors (outermost first), the breakpoint
+ * among them — BASE when there is none — and the ancestors the token keeps.
+ *
+ * The walk starts at the declaration because a breakpoint can sit on either
+ * side of the rule. Tailwind flattens `@media { .sel { … } }` only when its
+ * optimizer runs; unoptimized it nests the query inside the rule instead.
+ * Both shapes carry the same facts, and walking up from the declaration
+ * collects them either way.
+ *
+ * Null when there is no rule, or when a second one appears: two rules mean
+ * `&`-nesting (`hover:`, `group-*`, `after:`), whose flattened selector is not
+ * a lone class and is rejected on the flat path too.
  */
-function contextOf(rule) {
+function contextOf(decl) {
   const ancestors = []
-  for (let parent = rule.parent; parent.type !== 'root'; parent = parent.parent) {
-    if (parent.type !== 'atrule') return null
-    ancestors.unshift(parent)
+  let rule = null
+  for (let parent = decl.parent; parent.type !== 'root'; parent = parent.parent) {
+    if (parent.type === 'rule') {
+      if (rule) return null
+      rule = parent
+    } else if (parent.type === 'atrule') {
+      ancestors.unshift(parent)
+    } else {
+      return null
+    }
   }
+  if (!rule) return null
 
   let width = BASE
   let breakpoint = null
@@ -90,7 +107,7 @@ function contextOf(rule) {
     breakpoint = atRule
   }
 
-  return { ancestors, width, conditions: ancestors.filter((atRule) => atRule !== breakpoint) }
+  return { rule, ancestors, width, conditions: ancestors.filter((atRule) => atRule !== breakpoint) }
 }
 
 /** Nest `var()` fallbacks: [a, b] + tail → var(--a, var(--b, tail)) */
@@ -118,17 +135,27 @@ function fluidVariants(options = {}) {
   return {
     postcssPlugin: 'postcss-fluid-variants',
 
-    OnceExit(root, { AtRule, Rule, Declaration }) {
+    OnceExit(root, { AtRule, Rule, Declaration, result }) {
+      // Declarations that share a selector and an at-rule chain become one
+      // twin. `walkDecls` is document order and a Map keeps insertion order,
+      // so twins stay in their originals' relative order.
       const found = []
-      root.walkRules((rule) => {
-        if (!UTILITY.test(rule.selector)) return
-        const context = contextOf(rule)
-        if (!context) return
+      const groups = new Map()
+      root.walkDecls((node) => {
+        if (!fluidable.has(node.prop) || node.important) return
+        const context = contextOf(node)
+        if (!context || !UTILITY.test(context.rule.selector)) return
 
-        const decls = rule.nodes
-          .filter((node) => node.type === 'decl' && fluidable.has(node.prop) && !node.important)
-          .map(({ prop, value, source }) => ({ prop, value, source, keyword: KEYWORD.test(value.trim()) }))
-        if (decls.length) found.push({ selector: rule.selector, source: rule.source, ...context, decls })
+        const { rule, ancestors } = context
+        const path = rule.selector + ancestors.map((at) => `\n@${at.name} ${at.params}`).join('')
+        let group = groups.get(path)
+        if (!group) {
+          group = { selector: rule.selector, source: rule.source, ...context, decls: [] }
+          groups.set(path, group)
+          found.push(group)
+        }
+        const { prop, value, source } = node
+        group.decls.push({ prop, value, source, keyword: KEYWORD.test(value.trim()) })
       })
 
       // A property with no responsive value anywhere in the build has nothing
@@ -138,7 +165,28 @@ function fluidVariants(options = {}) {
         if (width === BASE) continue
         for (const { prop, keyword } of decls) if (!keyword) props.add(prop)
       }
-      if (!props.size) return
+      if (!props.size) {
+        // Nothing matched. If the stylesheet plainly carries responsive values
+        // for fluid properties, its shape is one this walk does not read — say
+        // so, rather than emitting nothing and looking like a browser-support
+        // gap that @supports quietly handled.
+        let responsive = 0
+        root.walkAtRules('media', (atRule) => {
+          if (!MIN_WIDTH.test(atRule.params)) return
+          atRule.walkDecls((node) => {
+            if (fluidable.has(node.prop) && !KEYWORD.test(node.value.trim())) responsive++
+          })
+        })
+        if (responsive) {
+          result.warn(
+            `Found ${responsive} responsive declaration(s) for fluid properties but could not read ` +
+              'any of them, so nothing was made fluid. This usually means the stylesheet is shaped ' +
+              'in a way this plugin does not understand yet.',
+            { plugin: 'postcss-fluid-variants' },
+          )
+        }
+        return
+      }
 
       const widths = new Map()
       const published = new Set()
@@ -218,19 +266,26 @@ function fluidVariants(options = {}) {
       // ── The twins, in the same at-rule context as their originals ─────────
       // Identical ancestor chains share one nested group, so the output stays
       // as compact as Tailwind's own. First-seen order follows source order.
-      const groups = new Map()
+      // A group is reused only while it is still the most recent thing at its
+      // level: a twin that jumped backwards past a rule setting real
+      // properties would lose a cascade race its original would have won.
+      // Token-only rules publish custom properties and nothing else, so they
+      // are inert and do not close a group.
+      const isTokenOnly = (node) =>
+        node.type === 'rule' && node.every((child) => child.prop?.startsWith('--'))
+
       const groupFor = (ancestors) => {
         let parent = supports
-        let path = ''
         for (const { name, params } of ancestors) {
-          path += `@${name} ${params}\n`
-          let group = groups.get(path)
-          if (!group) {
-            group = new AtRule({ name, params })
+          let last = parent.last
+          while (last && isTokenOnly(last)) last = last.prev()
+          if (last?.type === 'atrule' && last.name === name && last.params === params) {
+            parent = last
+          } else {
+            const group = new AtRule({ name, params, nodes: [] })
             parent.append(group)
-            groups.set(path, group)
+            parent = group
           }
-          parent = group
         }
         return parent
       }
