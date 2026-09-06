@@ -27,6 +27,22 @@ export default {
 
 Order matters. This plugin reads Tailwind's *output*, so it has to run after it — and before any minifier that doesn't understand `@function`.
 
+### CommonJS
+
+The package is plain CommonJS, so a `require()` in a webpack, laravel-mix or Gulp config gets the plugin factory directly:
+
+```js
+// webpack.mix.js
+mix.options({
+  postCss: [
+    require('@tailwindcss/postcss'),
+    require('postcss-fluid-variants'),
+  ],
+})
+```
+
+`import fluidVariants from 'postcss-fluid-variants'` resolves to the same factory.
+
 ### Vite
 
 With `@tailwindcss/vite`, keep Tailwind in `vite.config.js` and add this plugin to `postcss.config.js` as above; Vite runs PostCSS after the Tailwind plugin, so the order is right by construction. `@tailwindcss/postcss` in `postcss.config.js` works too.
@@ -136,7 +152,7 @@ npm test
 
 Uses `node:test`. No dependencies beyond `postcss`.
 
-`test/browser.test.js` additionally renders a real Tailwind build in Chromium and compares computed styles with plain Tailwind at several widths. It skips itself unless the optional tooling is installed:
+`test/browser.test.mjs` additionally renders a real Tailwind build in Chromium and compares computed styles with plain Tailwind at several widths. It skips itself unless the optional tooling is installed:
 
 ```sh
 npm i -D playwright @tailwindcss/postcss tailwindcss && npx playwright install chromium

@@ -103,7 +103,7 @@ const lookup = (pairs, tail) =>
     ? `if(${pairs.map(([name, value]) => `style(${name}): ${value}`).join('; ')}; else: ${tail})`
     : tail
 
-export default function fluidVariants(options = {}) {
+function fluidVariants(options = {}) {
   const {
     prefix = 'fl',
     minWidth = '20rem',
@@ -268,3 +268,5 @@ export default function fluidVariants(options = {}) {
 }
 
 fluidVariants.postcss = true
+
+module.exports = fluidVariants
