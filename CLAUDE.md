@@ -79,6 +79,10 @@ computed styles against plain Tailwind at a dozen widths:
 3. `@supports (top: --fl())` is true only where custom functions are supported.
 4. `@function`, `@property` and `@layer` are all honoured inside `@supports`.
 5. esbuild, Lightning CSS and cssnano keep the output semantically intact.
+6. Vite runs `postcss.config.js` after `@tailwindcss/vite`, so the plugin slots
+   in with no ordering work; but `css.transformer: 'lightningcss'` bypasses
+   PostCSS entirely. Vite also warns about any node without a `source`, so
+   every generated node carries one (twins point at their originals).
 
 ## Known limitation
 

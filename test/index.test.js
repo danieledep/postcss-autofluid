@@ -181,3 +181,13 @@ test('honours prefix and minWidth options', async () => {
   assert.match(out, /--fluid-margin-top-48rem/)
   assert.match(out, /else: 320px\)/)
 })
+
+test('gives every generated node a source location', async () => {
+  const root = postcss.parse(fixture, { from: '/app.css' })
+  await postcss([fluidVariants()]).process(root, { from: '/app.css' })
+  const missing = []
+  root.walk((node) => { if (!node.source?.input.file) missing.push(node.type + ' ' + (node.selector || node.prop || node.params)) })
+  assert.deepEqual(missing, [])
+  const twin = root.last.nodes.find((n) => n.name === 'layer').nodes.find((n) => n.selector === '.mt-6')
+  assert.equal(twin.source.start.line, fixture.split('\n').findIndex((l) => l.includes('.mt-6 {')) + 1)
+})

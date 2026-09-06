@@ -127,8 +127,8 @@ export default function fluidVariants(options = {}) {
 
         const decls = rule.nodes
           .filter((node) => node.type === 'decl' && fluidable.has(node.prop) && !node.important)
-          .map(({ prop, value }) => ({ prop, value, keyword: KEYWORD.test(value.trim()) }))
-        if (decls.length) found.push({ selector: rule.selector, ...context, decls })
+          .map(({ prop, value, source }) => ({ prop, value, source, keyword: KEYWORD.test(value.trim()) }))
+        if (decls.length) found.push({ selector: rule.selector, source: rule.source, ...context, decls })
       })
 
       // A property with no responsive value anywhere in the build has nothing
@@ -153,7 +153,7 @@ export default function fluidVariants(options = {}) {
       const bps = [...widths.values()].sort((a, b) => a.px - b.px)
       const keys = [BASE.key, ...bps.map((b) => b.key)]
 
-      const decl = (prop, value) => new Declaration({ prop, value })
+      const decl = (prop, value, source) => new Declaration({ prop, value, source })
 
       // ── The shared interpolator ────────────────────────────────────────────
       // One `@media` band per breakpoint. In each band, `--lo` is the nearest
@@ -235,26 +235,32 @@ export default function fluidVariants(options = {}) {
         return parent
       }
 
-      for (const { selector, width, ancestors, conditions, decls } of found) {
+      for (const { selector, source, width, ancestors, conditions, decls } of found) {
         const tokens = []
         const values = []
-        for (const { prop, value, keyword } of decls) {
+        for (const { prop, value, keyword, source } of decls) {
           if (!props.has(prop)) continue
           if (keyword) {
-            values.push(decl(prop, value))
+            values.push(decl(prop, value, source))
           } else {
-            tokens.push(decl(token(prop, width.key), value))
-            values.push(decl(prop, `${fn}-${prop}()`))
+            tokens.push(decl(token(prop, width.key), value, source))
+            values.push(decl(prop, `${fn}-${prop}()`, source))
           }
         }
 
         if (tokens.length && width !== BASE) {
-          groupFor(conditions).append(new Rule({ selector, nodes: tokens }))
-          groupFor(ancestors).append(new Rule({ selector, nodes: values }))
+          groupFor(conditions).append(new Rule({ selector, nodes: tokens, source }))
+          groupFor(ancestors).append(new Rule({ selector, nodes: values, source }))
         } else if (tokens.length || values.length) {
-          groupFor(ancestors).append(new Rule({ selector, nodes: [...tokens, ...values] }))
+          groupFor(ancestors).append(new Rule({ selector, nodes: [...tokens, ...values], source }))
         }
       }
+
+      // Everything generated points at a real location, for source maps and
+      // for bundlers that flag sourceless nodes (Vite does).
+      const origin = found[0].source
+      supports.source = origin
+      supports.walk((node) => { node.source ??= origin })
 
       root.append(supports)
     },

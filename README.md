@@ -27,6 +27,12 @@ export default {
 
 Order matters. This plugin reads Tailwind's *output*, so it has to run after it — and before any minifier that doesn't understand `@function`.
 
+### Vite
+
+With `@tailwindcss/vite`, keep Tailwind in `vite.config.js` and add this plugin to `postcss.config.js` as above; Vite runs PostCSS after the Tailwind plugin, so the order is right by construction. `@tailwindcss/postcss` in `postcss.config.js` works too.
+
+One caveat: Vite's `css.transformer: 'lightningcss'` replaces PostCSS entirely, so *no* PostCSS plugin runs there and the output is plain Tailwind. Leave the transformer at its default; using Lightning CSS only as the minifier (`build.cssMinify: 'lightningcss'`) is fine.
+
 ## How it works
 
 Tailwind emits one rule per class. A responsive variant is just a rule inside a `min-width` media query:
@@ -86,6 +92,8 @@ The output survives esbuild, Lightning CSS and cssnano minification unchanged in
 ```
 
 Default properties are the length-valued ones where interpolation makes sense: margins, paddings, insets, gaps, `font-size`, `line-height`, `letter-spacing`, `text-indent`, sizes, and border radii.
+
+Values are copied verbatim, so anything Tailwind can emit interpolates: the `--spacing` scale (including a per-element `[--spacing:1px]` override, since the token is resolved on the element), arbitrary values like `mt-[31px]`, `w-[calc(100%-2rem)]`, `p-[10%]`, `mt-[2vw]`, and custom properties via `mt-(--gap)`.
 
 Breakpoints and cascade layers are discovered from Tailwind's output, not configured: custom `--breakpoint-*` values, one-off `min-[900px]:` variants and Tailwind v3's `min-width:` queries all work, and twins land in whatever layer (or no layer) the originals use.
 
