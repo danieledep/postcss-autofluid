@@ -60,6 +60,56 @@ const MIN_WIDTH = /^\(\s*(?:min-width\s*:|width\s*>=)\s*([\d.]+)(rem|em|px)\s*\)
 /** Values that cannot be interpolated. */
 const KEYWORD = /^(?:auto|none|normal|inherit|initial|unset|revert(?:-layer)?|(?:fit|min|max)-content)$/
 
+/** Split on top-level whitespace. `calc(1px * 2)` stays one value. */
+function parts(value) {
+  const out = []
+  let depth = 0
+  let start = 0
+  for (let i = 0; i <= value.length; i++) {
+    const ch = value[i]
+    if (ch === '(') depth++
+    else if (ch === ')') depth--
+    else if (depth === 0 && (i === value.length || ch === ' ' || ch === '\t')) {
+      if (i > start) out.push(value.slice(start, i))
+      start = i + 1
+    }
+  }
+  return out
+}
+
+/** The longhands a box shorthand sets: 2 values are axes, 3 and 4 are sides. */
+function edges(prop) {
+  const sides = ['top', 'right', 'bottom', 'left']
+  // `inset` shortens to the bare sides; the others prefix theirs.
+  const side = prop === 'inset' ? sides : sides.map((s) => `${prop}-${s}`)
+  const inline = `${prop}-inline`
+  return { 2: [`${prop}-block`, inline], 3: [side[0], inline, side[2]], 4: side }
+}
+
+/**
+ * The longhands each shorthand's multi-value forms set. `border-radius` is
+ * absent on purpose: its values map to corners, and the elliptical `/` form
+ * does not split into longhands at all.
+ */
+const SHORTHANDS = {
+  padding: edges('padding'),
+  margin: edges('margin'),
+  inset: edges('inset'),
+  gap: { 2: ['row-gap', 'column-gap'] },
+}
+
+/**
+ * The declaration as the interpolator can use it: one property, one value. A
+ * shorthand list becomes its longhands, so each component interpolates on its
+ * own. Null when the value is a list with no known decomposition.
+ */
+function components(prop, value) {
+  const values = parts(value)
+  if (values.length < 2) return [[prop, value]]
+  const longhands = SHORTHANDS[prop]?.[values.length]
+  return longhands ? longhands.map((name, i) => [name, values[i]]) : null
+}
+
 const UNIT_PX = { px: 1, rem: 16, em: 16 }
 
 const BASE = { key: '0', raw: null, px: 0 }
@@ -125,9 +175,13 @@ function fluidVariants(options = {}) {
     prefix = 'fl',
     minWidth = '20rem',
     properties = DEFAULT_PROPERTIES,
+    layers = null,
   } = options
 
   const fluidable = new Set(properties)
+  // Opt-in scope. Null reads every rule; a list keeps authored CSS in other
+  // layers untouched. Tailwind v3 output is unlayered, so it needs null.
+  const scope = layers && new Set(layers)
   const fn = `--${prefix}`
   const token = (prop, key) => `--${prefix}-${prop}-${key}`
   const param = (key) => `--v${key}`
@@ -147,6 +201,7 @@ function fluidVariants(options = {}) {
         if (!context || !UTILITY.test(context.rule.selector)) return
 
         const { rule, ancestors } = context
+        if (scope && !ancestors.some((at) => at.name === 'layer' && scope.has(at.params.trim()))) return
         const path = rule.selector + ancestors.map((at) => `\n@${at.name} ${at.params}`).join('')
         let group = groups.get(path)
         if (!group) {
@@ -155,7 +210,15 @@ function fluidVariants(options = {}) {
           found.push(group)
         }
         const { prop, value, source } = node
-        group.decls.push({ prop, value, source, keyword: KEYWORD.test(value.trim()) })
+        // A list the interpolator cannot take is kept as written, not tokenised.
+        const split = components(prop, value.trim())
+        if (!split || split.some(([name]) => !fluidable.has(name))) {
+          group.decls.push({ prop, value, source, fixed: true })
+          return
+        }
+        for (const [name, part] of split) {
+          group.decls.push({ prop: name, value: part, source, fixed: KEYWORD.test(part) })
+        }
       })
 
       // A property with no responsive value anywhere in the build has nothing
@@ -163,7 +226,7 @@ function fluidVariants(options = {}) {
       const props = new Set()
       for (const { width, decls } of found) {
         if (width === BASE) continue
-        for (const { prop, keyword } of decls) if (!keyword) props.add(prop)
+        for (const { prop, fixed } of decls) if (!fixed) props.add(prop)
       }
       if (!props.size) {
         // Nothing matched. If the stylesheet plainly carries responsive values
@@ -174,7 +237,9 @@ function fluidVariants(options = {}) {
         root.walkAtRules('media', (atRule) => {
           if (!MIN_WIDTH.test(atRule.params)) return
           atRule.walkDecls((node) => {
-            if (fluidable.has(node.prop) && !KEYWORD.test(node.value.trim())) responsive++
+            if (!fluidable.has(node.prop)) return
+            const split = components(node.prop, node.value.trim())
+            if (split?.some(([name, part]) => fluidable.has(name) && !KEYWORD.test(part))) responsive++
           })
         })
         if (responsive) {
@@ -191,8 +256,8 @@ function fluidVariants(options = {}) {
       const widths = new Map()
       const published = new Set()
       for (const { width, decls } of found) {
-        for (const { prop, keyword } of decls) {
-          if (keyword || !props.has(prop)) continue
+        for (const { prop, fixed } of decls) {
+          if (fixed || !props.has(prop)) continue
           if (width !== BASE) widths.set(width.key, width)
           published.add(token(prop, width.key))
         }
@@ -293,9 +358,9 @@ function fluidVariants(options = {}) {
       for (const { selector, source, width, ancestors, conditions, decls } of found) {
         const tokens = []
         const values = []
-        for (const { prop, value, keyword, source } of decls) {
+        for (const { prop, value, fixed, source } of decls) {
           if (!props.has(prop)) continue
-          if (keyword) {
+          if (fixed) {
             values.push(decl(prop, value, source))
           } else {
             tokens.push(decl(token(prop, width.key), value, source))

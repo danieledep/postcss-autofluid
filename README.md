@@ -106,8 +106,11 @@ The output survives esbuild, Lightning CSS and cssnano minification unchanged in
   prefix: 'fl',          // token and function names: --fl, --fl-<prop>, --fl-<prop>-<bp>
   minWidth: '20rem',     // viewport where the base (unprefixed) value sits
   properties: [...],     // which properties to make fluid (see index.js for defaults)
+  layers: null,          // null reads every rule; ['utilities'] reads only that layer
 }
 ```
+
+`layers` scopes the plugin to named cascade layers. Tailwind v4 compiles utilities — generated ones and your own `@utility` blocks — into `@layer utilities`, so `layers: ['utilities']` leaves hand-written CSS in `@layer components` and unlayered stylesheets untouched. Leave it `null` on Tailwind v3, whose output is unlayered and would be skipped entirely.
 
 Default properties are the length-valued ones where interpolation makes sense: margins, paddings, insets, gaps, `font-size`, `line-height`, `letter-spacing`, `text-indent`, sizes, and border radii.
 
@@ -137,6 +140,8 @@ Every rule that has the specificity of one class — a single class selector, op
 - `dark:md:mt-4`, `md:max-lg:mt-8` — yes: the `md` token, under the remaining condition
 - `hover:mt-8`, `group-hover:mt-8`, `first:mt-0`, `[&_p]:mt-4` — left alone; their extra specificity keeps beating the twins, exactly as in Tailwind
 - `md:mt-auto`, `max-w-none`, `w-fit` — not interpolable; the twin re-asserts the keyword so it keeps winning
+- `padding: 0 20px`, `margin: 1px 2px 3px 4px`, `gap: 8px 12px`, `inset: 1px 2px` — split into their longhands first, so each component interpolates on its own
+- `border-radius: 1px 2px` — left alone; its values map to corners and the elliptical `/` form does not split
 - `mt-6!` — left alone; `!important` opts a declaration out
 - `md:flex`, `md:bg-red-500` — not a fluid property
 

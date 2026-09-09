@@ -57,7 +57,13 @@ assembles whatever co-occurs on an element.
   two non-contiguous uses of one chain moves a twin backwards past rules it must
   beat. Tailwind's `.container` is the case that exposes this — it emits its own
   per-breakpoint blocks early, far from the variant blocks.
-- Breakpoints and layers are discovered from the output, not configured.
+- Breakpoints and layers are discovered from the output, not configured. The
+  `layers` option only narrows which of them are read.
+- The interpolator works on one value, so a multi-value shorthand is split into
+  its longhands before anything else runs. A list with no known decomposition
+  (`border-radius`) keeps its literal value. Any property in the set twins every
+  lone-class rule that sets it, authored CSS included, so this guard is what
+  keeps hand-written `padding: 0 20px` from collapsing to `unset`.
 - No dependencies beyond `postcss`. Tests use `node:test`; the browser test
   skips itself when `playwright` / `@tailwindcss/postcss` are absent.
 
