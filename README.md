@@ -9,6 +9,8 @@ Make Tailwind's responsive utilities fluid, after the fact.
 
 Anywhere an element carries two or more lengths for the same property across breakpoints, the value now interpolates smoothly between them with `clamp()`. Anywhere it carries one — or a value that isn't a plain length, like `w-full` or `mt-auto` — it behaves exactly like Tailwind. No tildes, no new syntax, nothing to migrate: drop the plugin in after Tailwind and existing markup becomes fluid.
 
+See it running at [danieledep.github.io/fluid-variants-site](https://danieledep.github.io/fluid-variants-site/): every size on that page is plain responsive Tailwind made fluid by this plugin.
+
 ## Install
 
 ```sh
