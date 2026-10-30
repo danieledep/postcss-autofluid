@@ -28,6 +28,7 @@ const classes = [
   'mt-6 md:mt-8', 'md:mt-8', 'md:px-12 p-4', 'mt-6 md:mt-auto', 'mt-6 max-md:mt-2 md:mt-8',
   'mt-6 dark:mt-10', 'mt-6 xl:mt-10 2xl:mt-11', 'mt-6 md:max-lg:mt-8', 'mt-4', 'text-base xl:text-xl',
   'w-64 md:w-full lg:w-96', 'w-full md:w-64 lg:w-96', 'mt-6 md:mt-auto lg:mt-12', 'leading-6 md:leading-none',
+  'relative absolute top-0 left-0 md:top-4 mt-0',
 ]
 
 const html = `
@@ -46,9 +47,11 @@ const html = `
   </div>
   <div id="m1" class="mt-6 md:mt-auto lg:mt-12"></div>
   <p id="l1" class="leading-6 md:leading-none"></p>
+  <div class="relative" style="padding: 40px"><span id="z1" class="absolute top-0 left-0"></span></div>
+  <div id="z2" class="mt-0"></div>
 `
 
-const PROP = { c: 'paddingLeft', i: 'fontSize', w1: 'width', w2: 'width', l1: 'lineHeight' }
+const PROP = { c: 'paddingLeft', i: 'fontSize', w1: 'width', w2: 'width', l1: 'lineHeight', z1: 'top' }
 
 const read = (PROP) =>
   Object.fromEntries(
@@ -58,9 +61,10 @@ const read = (PROP) =>
     }),
   )
 
-test('computed styles match Tailwind at breakpoints and interpolate between them', { skip: !(playwright && tailwind) && 'playwright or @tailwindcss/postcss not installed' }, async () => {
+for (const optimize of [false, true]) test(`computed styles match Tailwind at breakpoints and interpolate between them (${optimize ? 'optimized' : 'dev'} output)`, { skip: !(playwright && tailwind) && 'playwright or @tailwindcss/postcss not installed' }, async () => {
   const source = `@import "tailwindcss"; @source inline("${classes.join(' ')}");`
-  const plain = (await postcss([tailwind.default()]).process(source, { from: 'app.css' })).css
+  // Production builds run Tailwind's optimizer, which rewrites values (calc(var(--spacing) * 0) → 0).
+  const plain = (await postcss([tailwind.default({ optimize })]).process(source, { from: 'app.css' })).css
   const fluid = (await postcss([fluidVariants()]).process(plain, { from: undefined })).css
 
   const browser = await launch()

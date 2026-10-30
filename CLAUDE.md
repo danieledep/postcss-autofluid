@@ -94,6 +94,11 @@ computed styles against plain Tailwind at a dozen widths:
   be 100%): `100%` is not a keyword, so it was tokenised and interpolated
   against `24rem`; and `md:mt-auto` let the band below bend towards `lg`.
   Hence the length-only fence and the stop tokens.
+- Tailwind's optimizer rewrites `calc(var(--spacing) * 0)` to a bare `0`. As
+  a token, `0` inside `calc()` is a <number>, so the interpolation was invalid
+  and `top-0`, `left-0`, `m-0`, `inset-0` fell back to `auto`/initial in every
+  production build. Found on the showcase site. Zero tokens are now published
+  as `0px`, and the browser test runs on optimized output as well as dev.
 - An unconditional twin for `md:px-12` set `padding-inline` to an invalid value
   below `md`, which reset `padding-left` from the `p-4` shorthand to 0. Hence:
   the property is only handed over inside the original's media.

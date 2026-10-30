@@ -56,6 +56,14 @@ function expand(...shorthands) {
  */
 const LENGTH_UNITS = ['px', 'rem', 'em', 'ch', 'ex', 'lh', 'rlh', 'cap', 'ic', 'rch', 'rex', 'rcap', 'ric', 'pt', 'pc', 'in', 'cm', 'mm', 'q']
 
+/**
+ * A bare zero. As a property value it is a length, but inside `calc()` it is a
+ * <number>, so `calc(0 + (0px - 0) * …)` is invalid. Tailwind's optimizer turns
+ * `calc(var(--spacing) * 0)` into exactly this (`top-0`, `m-0`, `inset-0`), so
+ * a zero token is published as `0px`.
+ */
+const ZERO = /^\s*[+-]?(?:0+\.?0*|\.0+)\s*$/
+
 /** Functions that keep a value a plain length when every argument is one. */
 const MATH = /\b(?:calc|min|max|clamp)\(/gi
 
@@ -193,7 +201,7 @@ function interpolable(value, theme, units) {
   if (KEYWORD.test(value)) return false
   const resolved = resolve(value, theme)
   if (resolved == null) return false
-  if (/^\s*-?0*\.?0+\s*$/.test(resolved)) return true // a bare zero is a length
+  if (ZERO.test(resolved)) return true // a bare zero is a length
   let lengths = 0
   const rest = resolved
     .replace(MATH, '(')
@@ -519,7 +527,7 @@ function fluidVariants(options = {}) {
             if (width !== BASE) tokens.push(decl(stop(prop, width.key), '1', source))
             values.push(decl(prop, value, source))
           } else {
-            tokens.push(decl(token(prop, width.key), value, source))
+            tokens.push(decl(token(prop, width.key), ZERO.test(value) ? '0px' : value, source))
             values.push(decl(prop, `${fn}-${prop}()`, source))
           }
         }

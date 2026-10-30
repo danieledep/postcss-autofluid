@@ -381,3 +381,11 @@ test('a property whose only responsive values are fixed is left alone', async ()
   const css = themed(`@layer utilities { .w-64 { width: 16rem } @media (width >= 48rem) { .md\\:w-full { width: 100% } } }`)
   assert.equal(await run(css), css)
 })
+
+test('publishes a bare zero as 0px, since 0 inside calc() is a number', async () => {
+  // Tailwind's optimizer emits `top: 0` for `top-0` and `margin-top: 0` for `mt-0`
+  const css = `.top-0 { top: 0 } .mt-0 { margin-top: 0 } @media (width >= 48rem) { .md\\:top-4 { top: 1rem } .md\\:mt-8 { margin-top: 2rem } }`
+  const out = flat(await appendix(css))
+  assert.match(out, /\.top-0 \{ --fl-top-0: 0px; top: --fl-top\(\); \}/)
+  assert.match(out, /\.mt-0 \{ --fl-margin-top-0: 0px;/)
+})
