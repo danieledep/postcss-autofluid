@@ -7,7 +7,7 @@ Make Tailwind's responsive utilities fluid, after the fact.
 <h1 class="text-2xl md:text-4xl xl:text-6xl mt-6 lg:mt-12">
 ```
 
-Anywhere an element carries two or more values for the same property across breakpoints, the value now interpolates smoothly between them with `clamp()`. Anywhere it carries one, it behaves exactly like Tailwind. No tildes, no new syntax, nothing to migrate: drop the plugin in after Tailwind and existing markup becomes fluid.
+Anywhere an element carries two or more lengths for the same property across breakpoints, the value now interpolates smoothly between them with `clamp()`. Anywhere it carries one — or a value that isn't a plain length, like `w-full` or `mt-auto` — it behaves exactly like Tailwind. No tildes, no new syntax, nothing to migrate: drop the plugin in after Tailwind and existing markup becomes fluid.
 
 ## Install
 
@@ -87,6 +87,23 @@ The plugin never needs to know which classes share an element. Each class contri
 
 Why not a Tailwind plugin? Because inside Tailwind's plugin API the breakpoint is known to the variant and the property to the utility, and neither can see the other. Tailwind's output is the first place both facts sit on the same node. See [the write-up](https://dan-webnotes.com/posts/2025-07-02-generate-fluid-styles-tailwind-plugin/) for the earlier attempts.
 
+## What gets interpolated
+
+Three fences decide what the plugin touches, so it stays out of everything that isn't a Tailwind length utility.
+
+**Layer.** When the stylesheet has an `@layer utilities` block — every Tailwind v4 build does — only that layer is read. Generated utilities and your own `@utility` blocks live there; `@layer components`, `@layer base` and unlayered hand-written CSS are never touched. Without one (Tailwind v3, whose output is unlayered) every rule is read.
+
+**Property.** Margins, paddings, insets, scroll margins and paddings, gaps, `font-size`, `line-height`, `letter-spacing`, widths and heights with their min and max, `flex-basis`, and border radii.
+
+**Value.** Only lengths interpolate. Before deciding, the plugin resolves `var()` through the theme variables Tailwind emits on `:root` (and your own root variables), so `calc(var(--spacing) * 8)` or `var(--text-xl)` is known to be `2rem` or `1.25rem` at build time. Then:
+
+- interpolated: `px`, `rem`, `em` and the other absolute or font-relative lengths, and `calc()` / `min()` / `max()` / `clamp()` over them — `mt-8`, `text-xl`, `w-96`, `max-w-md`, `mt-[31px]`, `tracking-tight`
+- kept as written: keywords (`auto`, `none`, `fit-content`…), percentages (`w-full`, `w-1/2`, `p-[10%]`), viewport and container units (`w-screen`, `h-dvh`, `mt-[2vw]`), unitless numbers (`leading-none`, the `line-height` ratios `text-*` ships), and variables that can't be resolved at build time (`mt-(--gap)` with `--gap` set somewhere other than the root)
+
+Percentages and viewport units are valid in `calc()`, but the interpolation runs over the viewport: a curve from `16rem` to `50%` would bend with the parent's width rather than the screen's. Opt them back in with `units` if that is what you want.
+
+A kept value at a breakpoint is a wall. In `w-64 md:w-full lg:w-96` the width stays `16rem` up to `md`, is `100%` from `md` to `lg`, and is `24rem` above — exactly Tailwind — rather than bending towards `24rem` below `md`. The twin publishes a stop token at `md` that the interpolator checks before looking further up.
+
 ## Runtime requirements
 
 The generated CSS relies on three features that, as of September 2026, ship in Chromium 139+ only:
@@ -106,15 +123,16 @@ The output survives esbuild, Lightning CSS and cssnano minification unchanged in
   prefix: 'fl',          // token and function names: --fl, --fl-<prop>, --fl-<prop>-<bp>
   minWidth: '20rem',     // viewport where the base (unprefixed) value sits
   properties: [...],     // which properties to make fluid (see index.js for defaults)
-  layers: null,          // null reads every rule; ['utilities'] reads only that layer
+  layers: 'auto',        // 'auto': utilities if present, else all; null: all; or a list of layer names
+  units: [...],          // units that interpolate; default: px, rem, em and other absolute lengths
 }
 ```
 
-`layers` scopes the plugin to named cascade layers. Tailwind v4 compiles utilities — generated ones and your own `@utility` blocks — into `@layer utilities`, so `layers: ['utilities']` leaves hand-written CSS in `@layer components` and unlayered stylesheets untouched. Leave it `null` on Tailwind v3, whose output is unlayered and would be skipped entirely.
+`layers: 'auto'` reads `@layer utilities` when the stylesheet has one and every rule otherwise. Pass a list to name the layers yourself, or `null` to read everything regardless.
 
-Default properties are the length-valued ones where interpolation makes sense: margins, paddings, insets, gaps, `font-size`, `line-height`, `letter-spacing`, `text-indent`, sizes, and border radii.
+`units` lists the units a value may use to interpolate. Add `'%'` or `'vw'` to let `w-full md:w-64` or `mt-[2vw]` take part, accepting that the curve then depends on the parent or the viewport twice over.
 
-Values are copied verbatim, so anything Tailwind can emit interpolates: the `--spacing` scale (including a per-element `[--spacing:1px]` override, since the token is resolved on the element), arbitrary values like `mt-[31px]`, `w-[calc(100%-2rem)]`, `p-[10%]`, `mt-[2vw]`, and custom properties via `mt-(--gap)`.
+Values are copied verbatim once they pass the fence, so the token is still resolved on the element: a per-element `[--spacing:1px]` override applies, as do arbitrary values like `mt-[31px]` and `w-[calc(2rem+3px)]`.
 
 Breakpoints and cascade layers are discovered from Tailwind's output, not configured: custom `--breakpoint-*` values, one-off `min-[900px]:` variants and Tailwind v3's `min-width:` queries all work, and twins land in whatever layer (or no layer) the originals use.
 
@@ -129,7 +147,7 @@ Measured on four public Tailwind codebases, built with Tailwind 4.3 and minified
 | tailwindcss.com | 4544 | 1163 | 448 → 546 kB (+22%) | 44 → 52 kB (+17%) |
 | shadcn/ui monorepo | 2488 | 1129 | 280 → 371 kB (+33%) | 34 → 41 kB (+22%) |
 
-Twins compress well because they repeat selectors and values already in the file. Expect roughly a fifth on top of your CSS over the wire.
+Twins compress well because they repeat selectors and values already in the file. Expect roughly a fifth on top of your CSS over the wire. These numbers predate the length-only fence (0.4), which skips percentage, viewport and ratio values, so current builds should come in at or below them.
 
 ## What is and isn't picked up
 
@@ -139,7 +157,7 @@ Every rule that has the specificity of one class — a single class selector, op
 - `dark:mt-10`, `max-md:mt-2`, `print:mt-0`, `@md:mt-8` (container), `supports-[…]:mt-4` — yes: the value becomes the *base* token, under that condition
 - `dark:md:mt-4`, `md:max-lg:mt-8` — yes: the `md` token, under the remaining condition
 - `hover:mt-8`, `group-hover:mt-8`, `first:mt-0`, `[&_p]:mt-4` — left alone; their extra specificity keeps beating the twins, exactly as in Tailwind
-- `md:mt-auto`, `max-w-none`, `w-fit` — not interpolable; the twin re-asserts the keyword so it keeps winning
+- `md:mt-auto`, `max-w-none`, `w-fit`, `md:w-full`, `md:leading-none` — not lengths; the twin re-asserts the value so it keeps winning, and stops the interpolation below it
 - `padding: 0 20px`, `margin: 1px 2px 3px 4px`, `gap: 8px 12px`, `inset: 1px 2px` — split into their longhands first, so each component interpolates on its own
 - `border-radius: 1px 2px` — left alone; its values map to corners and the elliptical `/` form does not split
 - `mt-6!` — left alone; `!important` opts a declaration out
@@ -151,9 +169,11 @@ If a stylesheet has responsive values for fluid properties and none of them can 
 
 In other words a non-breakpoint variant answers "what is the value at this breakpoint under this condition", and the interpolation runs through it. This matches Tailwind wherever Tailwind's own variant order puts the condition before the breakpoints (all built-in media variants). For a custom variant Tailwind orders *after* the breakpoints, such as class-based `dark`, `mt-6 dark:mt-10 md:mt-8` is "dark base is 40, md is 32" here, where plain Tailwind would let `dark:` win at every width. Stack them (`dark:md:mt-8`) to say what you mean.
 
-### Known limitation
+### `line-height` ratios step
 
-`line-height` mixes unitless ratios (`text-lg` → `calc(1.75 / 1.125)`, `leading-none` → `1`) and lengths (`leading-6`, `text-sm/6`). A ratio cannot be interpolated against a length, so wherever the two nearest tokens differ in kind the declaration is invalid at computed-value time and the property falls back to `unset` — for `line-height`, the inherited value. `leading-6 md:leading-none` is right at `md` and above and inherits below it. Keep both ends of a range in the same kind of unit — `leading-6 md:leading-8`, or `text-sm md:text-lg` with the ratios Tailwind ships.
+Tailwind's `text-*` utilities set `line-height` to a ratio (`text-lg` → `calc(1.75 / 1.125)`). Ratios are kept as written, so in `text-sm md:text-lg` the font size interpolates but the ratio steps at `md`, exactly as in Tailwind. Since the ratio multiplies an already-fluid font size, the jump is small — about 2px at `md` here. For a fully smooth line height, give both ends a length: `text-sm/6 md:text-lg/8`, or `leading-6 md:leading-8`.
+
+Mixing kinds is safe: `leading-6 md:leading-none` holds `1.5rem` below `md` and is `1` from there on, as in Tailwind.
 
 ## Testing
 
@@ -168,6 +188,8 @@ Uses `node:test`. No dependencies beyond `postcss`.
 ```sh
 npm i -D playwright @tailwindcss/postcss tailwindcss && npx playwright install chromium
 ```
+
+Where Playwright's browser download is blocked, point `CHROMIUM_PATH` at any Chromium 139+ binary.
 
 ## License
 

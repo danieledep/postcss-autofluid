@@ -26,13 +26,14 @@
  */
 
 const DEFAULT_PROPERTIES = [
-  ...expand('margin', 'padding', 'inset'),
-  ...expand('margin', 'padding').flatMap((p) => [`${p}-inline`, `${p}-block`]),
+  ...expand('margin', 'padding', 'inset', 'scroll-margin', 'scroll-padding'),
+  ...expand('margin', 'padding', 'scroll-margin', 'scroll-padding').flatMap((p) => [`${p}-inline`, `${p}-block`]),
   'inset-inline', 'inset-block',
   'gap', 'row-gap', 'column-gap',
-  'font-size', 'line-height', 'letter-spacing', 'text-indent',
+  'font-size', 'line-height', 'letter-spacing',
   'width', 'min-width', 'max-width',
   'height', 'min-height', 'max-height',
+  'flex-basis',
   'border-radius',
   'border-top-left-radius', 'border-top-right-radius',
   'border-bottom-right-radius', 'border-bottom-left-radius',
@@ -45,6 +46,18 @@ function expand(...shorthands) {
       : [s, `${s}-top`, `${s}-right`, `${s}-bottom`, `${s}-left`],
   )
 }
+
+/**
+ * Units that interpolate by default: lengths that do not depend on the
+ * containing block or the viewport. `%`, `vw`, `cqw` and friends are left out
+ * on purpose: the interpolation runs over the viewport, so a curve between
+ * `16rem` and `50%` would bend with the parent's width, not with the screen.
+ * They are valid in `calc()` and can be opted in with the `units` option.
+ */
+const LENGTH_UNITS = ['px', 'rem', 'em', 'ch', 'ex', 'lh', 'rlh', 'cap', 'ic', 'rch', 'rex', 'rcap', 'ric', 'pt', 'pc', 'in', 'cm', 'mm', 'q']
+
+/** Functions that keep a value a plain length when every argument is one. */
+const MATH = /\b(?:calc|min|max|clamp)\(/gi
 
 /**
  * A rule with the specificity of one class: a single class selector (escapes
@@ -108,6 +121,88 @@ function components(prop, value) {
   if (values.length < 2) return [[prop, value]]
   const longhands = SHORTHANDS[prop]?.[values.length]
   return longhands ? longhands.map((name, i) => [name, values[i]]) : null
+}
+
+/** `:root`, `:host` and `html`, alone or in a list: where Tailwind and authors put theme variables. */
+const ROOT = /^(?::root|:host|html)(?:\s*,\s*(?::root|:host|html))*$/
+
+/**
+ * Custom properties declared on the root, first definition wins. Tailwind v4
+ * emits every theme variable a utility uses into `@layer theme` this way, so
+ * `var(--spacing)` or `var(--text-xl)` can be resolved at build time.
+ */
+function themeOf(root) {
+  const theme = new Map()
+  root.walkRules((rule) => {
+    if (!ROOT.test(rule.selector.trim())) return
+    rule.each((node) => {
+      if (node.type === 'decl' && node.prop.startsWith('--') && !theme.has(node.prop)) theme.set(node.prop, node.value.trim())
+    })
+  })
+  return theme
+}
+
+/** Index of the `)` closing the `(` at `open`, or -1. */
+function closing(value, open) {
+  let depth = 0
+  for (let i = open; i < value.length; i++) {
+    if (value[i] === '(') depth++
+    else if (value[i] === ')' && --depth === 0) return i
+  }
+  return -1
+}
+
+/**
+ * Replace every `var()` with what it stands for: a theme value when the
+ * variable is on the root, else its fallback. Null when a variable is neither,
+ * since nothing can be said about a value only known at runtime.
+ */
+function resolve(value, theme, seen = new Set()) {
+  let out = ''
+  let i = 0
+  for (let at = value.indexOf('var(', i); at !== -1; at = value.indexOf('var(', i)) {
+    const end = closing(value, at + 3)
+    if (end === -1) return null
+    const inner = value.slice(at + 4, end)
+    let comma = -1
+    for (let j = 0, depth = 0; j < inner.length; j++) {
+      if (inner[j] === '(') depth++
+      else if (inner[j] === ')') depth--
+      else if (inner[j] === ',' && depth === 0) { comma = j; break }
+    }
+    const name = (comma === -1 ? inner : inner.slice(0, comma)).trim()
+    const fallback = comma === -1 ? null : inner.slice(comma + 1).trim()
+    let sub = null
+    if (theme.has(name) && !seen.has(name)) sub = resolve(theme.get(name), theme, new Set(seen).add(name))
+    else if (fallback) sub = resolve(fallback, theme, seen)
+    if (sub == null) return null
+    out += value.slice(i, at) + sub
+    i = end + 1
+  }
+  return out + value.slice(i)
+}
+
+/**
+ * Can this value take part in the interpolation? Only when, once its variables
+ * are resolved, it is arithmetic over lengths in the allowed units: at least
+ * one length, any number of plain multipliers, nothing else. Keywords, ratios
+ * (`line-height: 1.5`), relative units and anything unresolvable are not; they
+ * keep their literal value and stop the interpolation at their breakpoint.
+ */
+function interpolable(value, theme, units) {
+  if (KEYWORD.test(value)) return false
+  const resolved = resolve(value, theme)
+  if (resolved == null) return false
+  if (/^\s*-?0*\.?0+\s*$/.test(resolved)) return true // a bare zero is a length
+  let lengths = 0
+  const rest = resolved
+    .replace(MATH, '(')
+    .replace(/[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?([a-z%]*)/gi, (_, unit) => {
+      if (!unit) return ' '
+      if (units.has(unit.toLowerCase())) { lengths++; return ' ' }
+      return '\0'
+    })
+  return lengths > 0 && /^[\s()+\-*/,]*$/.test(rest)
 }
 
 const UNIT_PX = { px: 1, rem: 16, em: 16 }
@@ -175,21 +270,49 @@ function fluidVariants(options = {}) {
     prefix = 'fl',
     minWidth = '20rem',
     properties = DEFAULT_PROPERTIES,
-    layers = null,
+    layers = 'auto',
+    units = LENGTH_UNITS,
   } = options
 
   const fluidable = new Set(properties)
-  // Opt-in scope. Null reads every rule; a list keeps authored CSS in other
-  // layers untouched. Tailwind v3 output is unlayered, so it needs null.
-  const scope = layers && new Set(layers)
+  const lengthUnits = new Set(units.map((u) => u.toLowerCase()))
   const fn = `--${prefix}`
   const token = (prop, key) => `--${prefix}-${prop}-${key}`
+  // A fixed value at a breakpoint publishes this instead of a value token.
+  const stop = (prop, key) => `--${prefix}-${prop}-${key}-stop`
   const param = (key) => `--v${key}`
+  const stopParam = (key) => `--s${key}`
 
   return {
     postcssPlugin: 'postcss-fluid-variants',
 
     OnceExit(root, { AtRule, Rule, Declaration, result }) {
+      // Which layers to read. 'auto' reads only `@layer utilities` when the
+      // stylesheet has one — Tailwind v4 puts every generated utility and
+      // every `@utility` block there — and everything otherwise, which is
+      // what unlayered Tailwind v3 output needs. Null reads every rule.
+      let scope = null
+      if (layers === 'auto') {
+        let layered = false
+        root.walkAtRules('layer', (at) => {
+          if (at.nodes && at.params.trim() === 'utilities') layered = true
+        })
+        if (layered) scope = new Set(['utilities'])
+      } else if (layers) {
+        scope = new Set(layers)
+      }
+
+      const inScope = (node) => {
+        if (!scope) return true
+        for (let p = node.parent; p && p.type !== 'root'; p = p.parent) {
+          if (p.type === 'atrule' && p.name === 'layer' && scope.has(p.params.trim())) return true
+        }
+        return false
+      }
+
+      const theme = themeOf(root)
+      const isFixed = (value) => !interpolable(value, theme, lengthUnits)
+
       // Declarations that share a selector and an at-rule chain become one
       // twin. `walkDecls` is document order and a Map keeps insertion order,
       // so twins stay in their originals' relative order.
@@ -201,7 +324,7 @@ function fluidVariants(options = {}) {
         if (!context || !UTILITY.test(context.rule.selector)) return
 
         const { rule, ancestors } = context
-        if (scope && !ancestors.some((at) => at.name === 'layer' && scope.has(at.params.trim()))) return
+        if (!inScope(node)) return
         const path = rule.selector + ancestors.map((at) => `\n@${at.name} ${at.params}`).join('')
         let group = groups.get(path)
         if (!group) {
@@ -217,7 +340,7 @@ function fluidVariants(options = {}) {
           return
         }
         for (const [name, part] of split) {
-          group.decls.push({ prop: name, value: part, source, fixed: KEYWORD.test(part) })
+          group.decls.push({ prop: name, value: part, source, fixed: isFixed(part) })
         }
       })
 
@@ -237,9 +360,9 @@ function fluidVariants(options = {}) {
         root.walkAtRules('media', (atRule) => {
           if (!MIN_WIDTH.test(atRule.params)) return
           atRule.walkDecls((node) => {
-            if (!fluidable.has(node.prop)) return
+            if (!fluidable.has(node.prop) || !inScope(node)) return
             const split = components(node.prop, node.value.trim())
-            if (split?.some(([name, part]) => fluidable.has(name) && !KEYWORD.test(part))) responsive++
+            if (split?.some(([name, part]) => fluidable.has(name) && !isFixed(part))) responsive++
           })
         })
         if (responsive) {
@@ -253,18 +376,31 @@ function fluidVariants(options = {}) {
         return
       }
 
+      // A fixed value at a breakpoint (`md:w-full`, `md:mt-auto`) is a wall:
+      // the band below must hold its own value up to that breakpoint instead
+      // of bending towards a token further up. It publishes a stop token,
+      // which the interpolator checks before the value token at that width.
+      // A fixed base value needs none — nothing interpolates below the base.
       const widths = new Map()
+      const stopKeys = new Set()
       const published = new Set()
       for (const { width, decls } of found) {
         for (const { prop, fixed } of decls) {
-          if (fixed || !props.has(prop)) continue
+          if (!props.has(prop)) continue
+          if (fixed) {
+            if (width === BASE) continue
+            stopKeys.add(width.key)
+            published.add(stop(prop, width.key))
+          } else {
+            published.add(token(prop, width.key))
+          }
           if (width !== BASE) widths.set(width.key, width)
-          published.add(token(prop, width.key))
         }
       }
 
       const bps = [...widths.values()].sort((a, b) => a.px - b.px)
       const keys = [BASE.key, ...bps.map((b) => b.key)]
+      const stops = bps.filter((b) => stopKeys.has(b.key)).map((b) => b.key)
 
       const decl = (prop, value, source) => new Declaration({ prop, value, source })
 
@@ -274,18 +410,32 @@ function fluidVariants(options = {}) {
       // widths come from `if(style())`. Later bands override earlier locals.
       const interpolator = new AtRule({
         name: 'function',
-        params: `${fn}(${keys.map(param).join(', ')})`,
+        params: `${fn}(${[...keys.map(param), ...stops.map(stopParam)].join(', ')})`,
       })
 
       for (let i = 0; i <= bps.length; i++) {
         const below = bps.slice(0, i).reverse()
         const above = bps.slice(i)
 
+        // Above the band, take the nearest breakpoint that says anything. A
+        // stop there means hold: `--hi` becomes `--lo` and the value is flat.
+        const walled = above.some((b) => stopKeys.has(b.key))
+        const hiPairs = (value) =>
+          above.flatMap((b) => [
+            ...(stopKeys.has(b.key) ? [[stopParam(b.key), value(b, true)]] : []),
+            [param(b.key), value(b, false)],
+          ])
+
         const band = [
           decl('--lo', chain(below.map((b) => param(b.key)), `var(${param(BASE.key)})`)),
           decl('--lo-w', lookup(below.map((b) => [param(b.key), b.raw]), minWidth)),
-          decl('--hi', chain(above.map((b) => param(b.key)), 'var(--lo)')),
-          decl('--hi-w', lookup(above.map((b) => [param(b.key), b.raw]), '99999px')),
+          decl(
+            '--hi',
+            walled
+              ? lookup(hiPairs((b, isStop) => (isStop ? 'var(--lo)' : `var(${param(b.key)})`)), 'var(--lo)')
+              : chain(above.map((b) => param(b.key)), 'var(--lo)'),
+          ),
+          decl('--hi-w', lookup(hiPairs((b) => b.raw), '99999px')),
         ]
 
         if (i === 0) interpolator.append(band)
@@ -307,7 +457,12 @@ function fluidVariants(options = {}) {
         new AtRule({
           name: 'function',
           params: `${fn}-${prop}()`,
-          nodes: [decl('result', `${fn}(${keys.map((k) => `var(${token(prop, k)})`).join(', ')})`)],
+          nodes: [
+            decl(
+              'result',
+              `${fn}(${[...keys.map((k) => `var(${token(prop, k)})`), ...stops.map((k) => `var(${stop(prop, k)})`)].join(', ')})`,
+            ),
+          ],
         }),
       )
 
@@ -361,6 +516,7 @@ function fluidVariants(options = {}) {
         for (const { prop, value, fixed, source } of decls) {
           if (!props.has(prop)) continue
           if (fixed) {
+            if (width !== BASE) tokens.push(decl(stop(prop, width.key), '1', source))
             values.push(decl(prop, value, source))
           } else {
             tokens.push(decl(token(prop, width.key), value, source))

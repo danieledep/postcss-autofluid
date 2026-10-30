@@ -57,8 +57,24 @@ assembles whatever co-occurs on an element.
   two non-contiguous uses of one chain moves a twin backwards past rules it must
   beat. Tailwind's `.container` is the case that exposes this — it emits its own
   per-breakpoint blocks early, far from the variant blocks.
-- Breakpoints and layers are discovered from the output, not configured. The
-  `layers` option only narrows which of them are read.
+- Breakpoints and layers are discovered from the output, not configured. By
+  default (`layers: 'auto'`) only `@layer utilities` is read when the output
+  has one; that is the fence that keeps authored CSS in `components`, `base`
+  and unlayered sheets out. Without it (v3) every rule is read. `null` reads
+  everything; a list narrows explicitly.
+- Only lengths interpolate. `interpolable()` resolves `var()` through root
+  custom properties (Tailwind emits used theme variables on `:root, :host`)
+  and accepts arithmetic over the `units` set (absolute and font-relative
+  lengths by default) with at least one length. Keywords, `%`, viewport and
+  container units, unitless numbers and unresolvable variables are *fixed*:
+  re-asserted verbatim, never tokenised. `%` was excluded deliberately — the
+  curve runs over the viewport, a percentage tracks the parent.
+- A fixed value at a breakpoint is a wall. It publishes `--fl-<prop>-<bp>-stop`
+  (same conditions as a value token), and the interpolator's `--hi` checks
+  `style(--s<bp>)` before `style(--v<bp>)` at each breakpoint above the band.
+  Only boolean-form `style()` is used, the form verified below. A fixed base
+  value needs no stop. Bands with no stop above them keep the plain `var()`
+  chain, so output without walls is byte-identical to before.
 - The interpolator works on one value, so a multi-value shorthand is split into
   its longhands before anything else runs. A list with no known decomposition
   (`border-radius`) keeps its literal value. Any property in the set twins every
@@ -74,6 +90,10 @@ computed styles against plain Tailwind at a dozen widths:
 
 - Custom properties inherit. Without `@property … inherits: false`, a child with
   `mt-4` inside an `md:mt-8` parent got 32px.
+- `w-64 md:w-full lg:w-96` rendered 923px and 441px between md and lg (should
+  be 100%): `100%` is not a keyword, so it was tokenised and interpolated
+  against `24rem`; and `md:mt-auto` let the band below bend towards `lg`.
+  Hence the length-only fence and the stop tokens.
 - An unconditional twin for `md:px-12` set `padding-inline` to an invalid value
   below `md`, which reset `padding-left` from the `p-4` shorthand to 0. Hence:
   the property is only handed over inside the original's media.
@@ -92,7 +112,7 @@ computed styles against plain Tailwind at a dozen widths:
   on Tailwind 4.1.13: 6 responsive declarations, 0 `@function` blocks emitted.
   A no-op with responsive values present now warns.
 
-## Runtime assumptions — verified in Chromium 141
+## Runtime assumptions — verified in Chromium 141 (and 153 for the stop tokens)
 
 1. An unset `var(--x)` passed as a `@function` argument yields a
    guaranteed-invalid parameter, so `style(--param)` is false and the `var()`
@@ -106,14 +126,13 @@ computed styles against plain Tailwind at a dozen widths:
    PostCSS entirely. Vite also warns about any node without a `source`, so
    every generated node carries one (twins point at their originals).
 
-## Known limitation
+## Known trade-off
 
-`line-height` mixes unitless ratios and lengths across Tailwind's utilities.
-`calc(<length> + (<number> - <length>) * …)` is invalid, so in any band whose
-two nearest tokens differ in kind the property is invalid at computed-value
-time and falls back to `unset` (inherited, for `line-height`). `leading-6
-md:leading-none` is correct at `md`+ and inherits below. There is no CSS-level
-fix short of knowing which theme variables are ratios; documented in the README.
+`line-height` ratios are fixed, so they step at breakpoints like plain
+Tailwind instead of interpolating ratio↔ratio (`text-sm md:text-lg`). The old
+limitation — a ratio meeting a length made the property invalid and inherit —
+is gone: kinds never meet now. A possible refinement is a second token family
+per kind (numbers interpolate with numbers, each a wall for the other).
 
 ## Semantics worth knowing
 
