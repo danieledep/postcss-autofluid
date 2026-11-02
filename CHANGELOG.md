@@ -10,6 +10,16 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The "nothing was made fluid" warning now points at the first unread
   declaration, so runners report a file and line.
 
+### Fixed
+- A custom `@utility` with its own `@variant md`, used as `md:`, rendered the
+  outer value from md up: the nested value's token was published under a
+  redundant media query and then overridden by the outer one. Min-width
+  queries implied by the token's breakpoint are no longer kept as conditions,
+  and a token rule is never placed before an earlier one it competes with.
+- Selector lists from Tailwind's optimizer (`.h1, .md\:h0 { … }`) were skipped
+  entirely, so their twins went missing in production builds. Each lone class
+  in a list is now read as its own rule.
+
 ## [0.4.0] - 2026-10-30
 
 ### Added

@@ -247,20 +247,25 @@ function contextOf(decl) {
   }
   if (!rule) return null
 
+  // The widest breakpoint is the token's. Every other min-width query in the
+  // chain is implied by it, so it is no condition either: `md:` on an
+  // `@utility` that holds its own `@variant md` (or `@variant sm`) nests one
+  // breakpoint inside another, and the inner value must be published as
+  // unconditionally as the outer one, or the band below cannot see it.
   let width = BASE
-  let breakpoint = null
+  const breakpoints = new Set()
   for (const atRule of ancestors) {
     const match = atRule.name === 'media' && MIN_WIDTH.exec(atRule.params)
     if (!match) continue
+    breakpoints.add(atRule)
     const [, number, unit] = match
     const px = Number(number) * UNIT_PX[unit]
     if (px <= width.px) continue
     const raw = number + unit
     width = { key: raw.replace('.', '_'), raw, px }
-    breakpoint = atRule
   }
 
-  return { rule, ancestors, width, conditions: ancestors.filter((atRule) => atRule !== breakpoint) }
+  return { rule, ancestors, width, conditions: ancestors.filter((atRule) => !breakpoints.has(atRule)) }
 }
 
 /** Nest `var()` fallbacks: [a, b] + tail → var(--a, var(--b, tail)) */
@@ -329,26 +334,30 @@ function fluidVariants(options = {}) {
       root.walkDecls((node) => {
         if (!fluidable.has(node.prop) || node.important) return
         const context = contextOf(node)
-        if (!context || !UTILITY.test(context.rule.selector)) return
+        if (!context || !inScope(node)) return
 
+        // Tailwind's optimizer merges neighbours with identical bodies into a
+        // list (`.h1, .md\:h0 { … }`). A list is its selectors one after the
+        // other, so each lone class in it is read as a rule of its own.
         const { rule, ancestors } = context
-        if (!inScope(node)) return
-        const path = rule.selector + ancestors.map((at) => `\n@${at.name} ${at.params}`).join('')
-        let group = groups.get(path)
-        if (!group) {
-          group = { selector: rule.selector, source: rule.source, ...context, decls: [] }
-          groups.set(path, group)
-          found.push(group)
-        }
+        const chainPath = ancestors.map((at) => `\n@${at.name} ${at.params}`).join('')
         const { prop, value, source } = node
         // A list the interpolator cannot take is kept as written, not tokenised.
         const split = components(prop, value.trim())
-        if (!split || split.some(([name]) => !fluidable.has(name))) {
-          group.decls.push({ prop, value, source, fixed: true })
-          return
-        }
-        for (const [name, part] of split) {
-          group.decls.push({ prop: name, value: part, source, fixed: isFixed(part) })
+        const kept = !split || split.some(([name]) => !fluidable.has(name))
+          ? [{ prop, value, source, fixed: true }]
+          : split.map(([name, part]) => ({ prop: name, value: part, source, fixed: isFixed(part) }))
+
+        for (const selector of rule.selectors) {
+          if (!UTILITY.test(selector)) continue
+          const path = selector + chainPath
+          let group = groups.get(path)
+          if (!group) {
+            group = { ...context, selector, source: rule.source, decls: [] }
+            groups.set(path, group)
+            found.push(group)
+          }
+          group.decls.push(...kept)
         }
       })
 
@@ -503,14 +512,19 @@ function fluidVariants(options = {}) {
       // properties would lose a cascade race its original would have won.
       // Token-only rules publish custom properties and nothing else, so they
       // are inert and do not close a group.
+      // The exception is a token-only rule that publishes one of the same
+      // tokens for the same selector: the new rule has to land after it, or
+      // the earlier value would win (a nested `@variant` under a condition).
       const isTokenOnly = (node) =>
         node.type === 'rule' && node.every((child) => child.prop?.startsWith('--'))
+      const competes = (node, rule) =>
+        rule && node.selector === rule.selector && node.some((d) => rule.some((n) => n.prop === d.prop))
 
-      const groupFor = (ancestors) => {
+      const groupFor = (ancestors, rule) => {
         let parent = supports
         for (const { name, params } of ancestors) {
           let last = parent.last
-          while (last && isTokenOnly(last)) last = last.prev()
+          while (last && isTokenOnly(last) && !competes(last, rule)) last = last.prev()
           if (last?.type === 'atrule' && last.name === name && last.params === params) {
             parent = last
           } else {
@@ -537,7 +551,8 @@ function fluidVariants(options = {}) {
         }
 
         if (tokens.length && width !== BASE) {
-          groupFor(conditions).append(new Rule({ selector, nodes: tokens, source }))
+          const published = new Rule({ selector, nodes: tokens, source })
+          groupFor(conditions, published).append(published)
           groupFor(ancestors).append(new Rule({ selector, nodes: values, source }))
         } else if (tokens.length || values.length) {
           groupFor(ancestors).append(new Rule({ selector, nodes: [...tokens, ...values], source }))

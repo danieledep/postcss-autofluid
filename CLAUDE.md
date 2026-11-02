@@ -117,6 +117,15 @@ computed styles against plain Tailwind at a dozen widths:
   on Tailwind 4.1.13: 6 responsive declarations, 0 `@function` blocks emitted.
   A no-op with responsive values present now warns.
 
+- `md:` on an `@utility` with its own `@variant md` nests one breakpoint
+  inside another. The inner query was kept as a condition on the token, which
+  then sat inside `@media` while the outer token was appended after it flat,
+  so the outer value won from md up. Implied min-width queries are not
+  conditions, and `groupFor` never skips back past a token-only rule that
+  publishes the same token for the same selector. In production the optimizer
+  also merges identical bodies into lists (`.h1, .md\:h0`), which `UTILITY`
+  rejected; lists are now split into their selectors.
+
 ## Runtime assumptions — verified in Chromium 141 (and 153 for the stop tokens)
 
 1. An unset `var(--x)` passed as a `@function` argument yields a
