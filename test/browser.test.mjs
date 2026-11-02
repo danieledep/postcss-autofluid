@@ -29,7 +29,16 @@ const classes = [
   'mt-6 dark:mt-10', 'mt-6 xl:mt-10 2xl:mt-11', 'mt-6 md:max-lg:mt-8', 'mt-4', 'text-base xl:text-xl',
   'w-64 md:w-full lg:w-96', 'w-full md:w-64 lg:w-96', 'mt-6 md:mt-auto lg:mt-12', 'leading-6 md:leading-none',
   'relative absolute top-0 left-0 md:top-4 mt-0',
+  'h1 md:h0', 'h1 md:h2', 'h1 md:h3',
 ]
+
+// Custom utilities with variants of their own: `md:h0` nests md inside md.
+const utilities = `
+  @utility h0 { font-size: 64px; line-height: 72px; @variant md { font-size: 88px; line-height: 96px; } }
+  @utility h1 { font-size: 48px; line-height: 56px; @variant md { font-size: 64px; line-height: 72px; } }
+  @utility h2 { font-size: 40px; @variant lg { font-size: 56px; } }
+  @utility h3 { font-size: 30px; @variant max-lg { font-size: 20px; } }
+`
 
 const html = `
   <div id="a" class="mt-6 md:mt-8"></div>
@@ -49,9 +58,13 @@ const html = `
   <p id="l1" class="leading-6 md:leading-none"></p>
   <div class="relative" style="padding: 40px"><span id="z1" class="absolute top-0 left-0"></span></div>
   <div id="z2" class="mt-0"></div>
+  <p id="n0" class="h1 md:h0"></p>
+  <p id="n0l" class="h1 md:h0"></p>
+  <p id="n2" class="h1 md:h2"></p>
+  <p id="n3" class="h1 md:h3"></p>
 `
 
-const PROP = { c: 'paddingLeft', i: 'fontSize', w1: 'width', w2: 'width', l1: 'lineHeight', z1: 'top' }
+const PROP = { c: 'paddingLeft', i: 'fontSize', w1: 'width', w2: 'width', l1: 'lineHeight', z1: 'top', n0: 'fontSize', n0l: 'lineHeight', n2: 'fontSize', n3: 'fontSize' }
 
 const read = (PROP) =>
   Object.fromEntries(
@@ -62,7 +75,7 @@ const read = (PROP) =>
   )
 
 for (const optimize of [false, true]) test(`computed styles match Tailwind at breakpoints and interpolate between them (${optimize ? 'optimized' : 'dev'} output)`, { skip: !(playwright && tailwind) && 'playwright or @tailwindcss/postcss not installed' }, async () => {
-  const source = `@import "tailwindcss"; @source inline("${classes.join(' ')}");`
+  const source = `@import "tailwindcss"; @source inline("${classes.join(' ')}"); ${utilities}`
   // Production builds run Tailwind's optimizer, which rewrites values (calc(var(--spacing) * 0) → 0).
   const plain = (await postcss([tailwind.default({ optimize })]).process(source, { from: 'app.css' })).css
   const fluid = (await postcss([fluidVariants()]).process(plain, { from: undefined })).css
@@ -83,7 +96,7 @@ for (const optimize of [false, true]) test(`computed styles match Tailwind at br
     for (const width of [320, 1536]) {
       assert.deepEqual(await at(width, fluid), await at(width, plain), `at ${width}px`)
     }
-    const md = ['a', 'b', 'child', 'c', 'd', 'e', 'h', 'w1', 'm1', 'l1']
+    const md = ['a', 'b', 'child', 'c', 'd', 'e', 'h', 'w1', 'm1', 'l1', 'n0', 'n0l', 'n3']
     const pick = (all) => Object.fromEntries(md.map((id) => [id, all[id]]))
     assert.deepEqual(pick(await at(768, fluid)), pick(await at(768, plain)), 'at 768px')
 
@@ -101,6 +114,13 @@ for (const optimize of [false, true]) test(`computed styles match Tailwind at br
       const pl = await at(width, plain)
       for (const id of ['w1', 'm1', 'l1']) assert.equal(fl[id], pl[id], `${id} at ${width}px`)
     }
+    // A breakpoint nested in the same breakpoint: the inner value wins from md up.
+    for (const width of [900, 1100]) {
+      const fl = await at(width, fluid)
+      const pl = await at(width, plain)
+      for (const id of ['n0', 'n0l', 'n3']) assert.equal(fl[id], pl[id], `${id} at ${width}px`)
+    }
+    assert.equal((await at(1100, fluid)).n0, '88px')
     assert.equal(mid.w2, '1000px') // w-full below md stays 100%
     assert.equal((await at(896, fluid)).w2, '320px') // 256px at 768 → 384px at 1024
   } finally {

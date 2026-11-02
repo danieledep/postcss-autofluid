@@ -397,3 +397,97 @@ test('points the no-op warning at the first unread declaration', async () => {
   assert.equal(warning.node.prop, 'margin-top')
   assert.equal(warning.line, 1)
 })
+
+// What `@tailwindcss/postcss` 4.3 emits for `h1 md:h0 md:h2 md:h3` with
+//   @utility h0 { font-size: 64px; line-height: 72px; @variant md { font-size: 88px; line-height: 96px; } }
+//   @utility h1 { font-size: 48px; line-height: 56px; @variant md { font-size: 64px; line-height: 72px; } }
+//   @utility h2 { font-size: 40px; @variant lg { font-size: 56px; } }
+//   @utility h3 { font-size: 30px; @variant max-lg { font-size: 20px; } }
+// `md:` on a utility with its own `@variant md` nests one breakpoint in another.
+const nestedVariants = {
+  dev: `
+@layer utilities {
+  .h1 {
+    font-size: 48px;
+    line-height: 56px;
+    @media (width >= 48rem) {
+      font-size: 64px;
+      line-height: 72px;
+    }
+  }
+  @media (width >= 48rem) {
+    .md\\:h0 {
+      font-size: 64px;
+      line-height: 72px;
+    }
+    @media (width >= 48rem) {
+      .md\\:h0 {
+        font-size: 88px;
+        line-height: 96px;
+      }
+    }
+    .md\\:h2 {
+      font-size: 40px;
+    }
+    @media (width >= 64rem) {
+      .md\\:h2 {
+        font-size: 56px;
+      }
+    }
+    .md\\:h3 {
+      font-size: 30px;
+    }
+    @media (width < 64rem) {
+      .md\\:h3 {
+        font-size: 20px;
+      }
+    }
+  }
+}
+`,
+  // The optimizer also merges `.h1` and `.md\\:h0` into one list at md.
+  optimized: `@layer utilities{.h1{font-size:48px;line-height:56px}@media (min-width:48rem){.h1,.md\\:h0{font-size:64px;line-height:72px}@media (min-width:48rem){.md\\:h0{font-size:88px;line-height:96px}}.md\\:h2{font-size:40px}@media (min-width:64rem){.md\\:h2{font-size:56px}}.md\\:h3{font-size:30px}@media not all and (min-width:64rem){.md\\:h3{font-size:20px}}}}`,
+}
+
+/** Every publication of a token for a selector, in order, with the media queries it sits under. */
+const publications = (css, selector, name) => {
+  const out = []
+  postcss.parse(css.slice(css.indexOf('@supports'))).walkDecls(name, (d) => {
+    if (d.parent.selector !== selector) return
+    const media = []
+    for (let p = d.parent.parent; p.type !== 'root'; p = p.parent) if (p.name === 'media') media.unshift(p.params)
+    out.push({ value: d.value, media })
+  })
+  return out
+}
+
+for (const [shape, css] of Object.entries(nestedVariants)) {
+  test(`a breakpoint nested in the same breakpoint publishes the inner value last (${shape} output)`, async () => {
+    const out = await run(css)
+    for (const [prop, inner] of [['font-size', '88px'], ['line-height', '96px']]) {
+      const tokens = publications(out, '.md\\:h0', `--fl-${prop}-48rem`)
+      // the inner value wins at md and up, as it does in plain Tailwind, and is
+      // published without media so the band below can interpolate towards it
+      assert.equal(tokens.at(-1)?.value, inner, `${prop}: ${JSON.stringify(tokens)}`)
+      for (const { media } of tokens) assert.deepEqual(media, [], prop)
+    }
+    // the merged `.h1, .md\\:h0` list still twins `.h1`
+    assert.deepEqual(publications(out, '.h1', '--fl-font-size-48rem'), [{ value: '64px', media: [] }])
+  })
+
+  test(`a breakpoint nested in a lower one publishes at the higher breakpoint (${shape} output)`, async () => {
+    const out = await run(css)
+    assert.deepEqual(publications(out, '.md\\:h2', '--fl-font-size-48rem'), [{ value: '40px', media: [] }])
+    assert.deepEqual(publications(out, '.md\\:h2', '--fl-font-size-64rem'), [{ value: '56px', media: [] }])
+  })
+
+  test(`a max-width variant nested in a breakpoint stays a condition, after the outer value (${shape} output)`, async () => {
+    const out = await run(css)
+    const tokens = publications(out, '.md\\:h3', '--fl-font-size-48rem')
+    assert.equal(tokens.length, 2)
+    assert.deepEqual(tokens[0], { value: '30px', media: [] })
+    assert.equal(tokens[1].value, '20px')
+    assert.equal(tokens[1].media.length, 1)
+    assert.doesNotMatch(tokens[1].media[0], /^\((?:min-)?width\s*(?:>=|:)/)
+  })
+}
