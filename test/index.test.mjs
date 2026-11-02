@@ -491,3 +491,84 @@ for (const [shape, css] of Object.entries(nestedVariants)) {
     assert.doesNotMatch(tokens[1].media[0], /^\((?:min-)?width\s*(?:>=|:)/)
   })
 }
+
+// What `@tailwindcss/postcss` 4.3.4 emits for `mt-6 md:mt-8 scoped:mt-2 md:scoped:mt-10` with
+//   @custom-variant scoped { @scope (.card) { @slot; } }
+// Since 4.3.4 an `@scope` variant wraps the utility; earlier releases nested
+// the `@scope` inside the rule, and the optimizer emptied it.
+const scopeVariant = {
+  dev: `
+@layer theme {
+  :root, :host {
+    --spacing: 0.25rem;
+  }
+}
+@layer utilities {
+  .mt-6 {
+    margin-top: calc(var(--spacing) * 6);
+  }
+  @media (width >= 48rem) {
+    .md\\:mt-8 {
+      margin-top: calc(var(--spacing) * 8);
+    }
+  }
+  @scope (.card) {
+    .scoped\\:mt-2 {
+      margin-top: calc(var(--spacing) * 2);
+    }
+  }
+  @media (width >= 48rem) {
+    @scope (.card) {
+      .md\\:scoped\\:mt-10 {
+        margin-top: calc(var(--spacing) * 10);
+      }
+    }
+  }
+}
+`,
+  optimized: `@layer theme{:root,:host{--spacing:.25rem}}@layer utilities{.mt-6{margin-top:calc(var(--spacing) * 6)}@media (min-width:48rem){.md\\:mt-8{margin-top:calc(var(--spacing) * 8)}}@scope(.card){.scoped\\:mt-2{margin-top:calc(var(--spacing) * 2)}}@media (min-width:48rem){@scope(.card){.md\\:scoped\\:mt-10{margin-top:calc(var(--spacing) * 10)}}}}`,
+}
+
+/** Every declaration of `prop` for a selector inside the appendix, with its at-rules below `@layer`. */
+const placements = (css, selector, prop) => {
+  const out = []
+  postcss.parse(css.slice(css.indexOf('@supports'))).walkDecls(prop, (d) => {
+    if (d.parent.selector !== selector) return
+    const at = []
+    for (let p = d.parent.parent; p.type !== 'root'; p = p.parent) {
+      if (p.name === 'media' || p.name === 'scope') at.unshift(`@${p.name} ${p.params.replace(/^\(/, ' (').trim()}`)
+    }
+    out.push({ value: d.value, at })
+  })
+  return out
+}
+
+for (const [shape, css] of Object.entries(scopeVariant)) {
+  test(`an @scope variant is mirrored as a condition around its twin (${shape} output)`, async () => {
+    const out = await run(css)
+    // Tailwind's own rules are untouched
+    assert.ok(out.startsWith(css))
+    const scope = /^@scope \(\.card\)$/
+
+    const base = placements(out, '.scoped\\:mt-2', '--fl-margin-top-0')
+    assert.equal(base.length, 1)
+    assert.equal(base[0].value, 'calc(var(--spacing) * 2)')
+    assert.equal(base[0].at.length, 1)
+    assert.match(base[0].at[0], scope)
+
+    // the md token keeps the scope and drops only the breakpoint
+    const md = placements(out, '.md\\:scoped\\:mt-10', '--fl-margin-top-48rem')
+    assert.equal(md.length, 1)
+    assert.equal(md[0].value, 'calc(var(--spacing) * 10)')
+    assert.equal(md[0].at.length, 1)
+    assert.match(md[0].at[0], scope)
+
+    // the property is handed over only under both the breakpoint and the scope
+    const handed = placements(out, '.md\\:scoped\\:mt-10', 'margin-top')
+    assert.equal(handed.length, 1)
+    assert.equal(handed[0].value, '--fl-margin-top()')
+    assert.equal(handed[0].at.length, 2)
+    assert.match(handed[0].at[0], /^@media /)
+    assert.match(handed[0].at[1], scope)
+  })
+}
