@@ -12,7 +12,8 @@
   },
   "exports": "./index.js",
   "files": [
-    "index.js"
+    "index.js",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=20"
