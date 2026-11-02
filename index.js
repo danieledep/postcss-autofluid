@@ -365,12 +365,16 @@ function fluidVariants(options = {}) {
         // so, rather than emitting nothing and looking like a browser-support
         // gap that @supports quietly handled.
         let responsive = 0
+        let first = null
         root.walkAtRules('media', (atRule) => {
           if (!MIN_WIDTH.test(atRule.params)) return
           atRule.walkDecls((node) => {
             if (!fluidable.has(node.prop) || !inScope(node)) return
             const split = components(node.prop, node.value.trim())
-            if (split?.some(([name, part]) => fluidable.has(name) && !isFixed(part))) responsive++
+            if (split?.some(([name, part]) => fluidable.has(name) && !isFixed(part))) {
+              responsive++
+              first ??= node
+            }
           })
         })
         if (responsive) {
@@ -378,7 +382,7 @@ function fluidVariants(options = {}) {
             `Found ${responsive} responsive declaration(s) for fluid properties but could not read ` +
               'any of them, so nothing was made fluid. This usually means the stylesheet is shaped ' +
               'in a way this plugin does not understand yet.',
-            { plugin: 'postcss-fluid-variants' },
+            { node: first },
           )
         }
         return

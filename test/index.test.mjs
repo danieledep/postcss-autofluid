@@ -389,3 +389,11 @@ test('publishes a bare zero as 0px, since 0 inside calc() is a number', async ()
   assert.match(out, /\.top-0 \{ --fl-top-0: 0px; top: --fl-top\(\); \}/)
   assert.match(out, /\.mt-0 \{ --fl-margin-top-0: 0px;/)
 })
+
+test('points the no-op warning at the first unread declaration', async () => {
+  const css = `@media (width >= 48rem) { .md\\:mt-8 > p { margin-top: 2rem } }`
+  const [warning] = (await postcss([fluidVariants()]).process(css, { from: undefined })).warnings()
+  assert.equal(warning.plugin, 'postcss-fluid-variants')
+  assert.equal(warning.node.prop, 'margin-top')
+  assert.equal(warning.line, 1)
+})
