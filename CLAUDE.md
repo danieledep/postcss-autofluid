@@ -125,6 +125,14 @@ computed styles against plain Tailwind at a dozen widths:
   publishes the same token for the same selector. In production the optimizer
   also merges identical bodies into lists (`.h1, .md\:h0`), which `UTILITY`
   rejected; lists are now split into their selectors.
+- `rounded-[4px/8px]` emits `border-radius: 4px/8px` with no spaces, so it is
+  one "part" and passed the length fence; as a token, `calc(4px/8px + …)` is a
+  number and every corner went to 0. The optimizer strips the spaces from
+  `4px / 8px` too. A top-level `/` now makes a value fixed.
+- The optimizer folds `rounded-full`'s `calc(infinity * 1px)` into
+  `2147483647px`, which then interpolated: `rounded-sm md:rounded-full` was a
+  pill a few pixels above the base in production only. Lengths of `1e6` units
+  or more (`HUGE`) are fixed.
 
 ## Runtime assumptions — verified in Chromium 141 (and 153 for the stop tokens)
 

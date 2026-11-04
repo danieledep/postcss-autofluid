@@ -390,6 +390,29 @@ test('publishes a bare zero as 0px, since 0 inside calc() is a number', async ()
   assert.match(out, /\.mt-0 \{ --fl-margin-top-0: 0px;/)
 })
 
+test('keeps slash radii as written, since a top-level / is a separator, not division', async () => {
+  // `rounded-[4px/8px]`; the optimizer also strips the spaces from `rounded-[4px_/_8px]`
+  const css = `.rounded-sm { border-radius: 0.25rem } .rounded-\\[4px\\/8px\\] { border-radius: 4px/8px }
+    @media (width >= 48rem) { .md\\:rounded-2xl { border-radius: 1rem } .md\\:rounded-\\[16px\\/32px\\] { border-radius: 16px/32px } }`
+  const out = flat(await appendix(css))
+  assert.match(out, /\.rounded-\\\[4px\\\/8px\\\] \{ border-radius: 4px\/8px; \}/)
+  assert.match(out, /\.md\\:rounded-\\\[16px\\\/32px\\\] \{ --fl-border-radius-48rem-stop: 1; \}/)
+  assert.doesNotMatch(out, /--fl-border-radius-(0|48rem): (4|16)px\//)
+  // division inside calc() is still arithmetic
+  assert.match(out, /\.rounded-sm \{ --fl-border-radius-0: 0\.25rem;/)
+})
+
+test('treats lengths standing in for infinity as fixed', async () => {
+  // Tailwind's optimizer folds `rounded-full`'s calc(infinity * 1px) into 2147483647px
+  const css = `.rounded-sm { border-radius: 0.25rem } .w-4 { width: calc(1rem / 1) }
+    @media (width >= 48rem) { .md\\:rounded-full { border-radius: 2147483647px } .md\\:rounded-xl { border-radius: 0.75rem } .md\\:w-8 { width: 2rem } }`
+  const out = flat(await appendix(css))
+  assert.match(out, /\.md\\:rounded-full \{ --fl-border-radius-48rem-stop: 1; \}/)
+  assert.match(out, /@media \(width >= 48rem\) \{ \.md\\:rounded-full \{ border-radius: 2147483647px; \}/)
+  assert.doesNotMatch(out, /--fl-border-radius-48rem: 2147483647px/)
+  assert.match(out, /\.w-4 \{ --fl-width-0: calc\(1rem \/ 1\);/)
+})
+
 test('points the no-op warning at the first unread declaration', async () => {
   const css = `@media (width >= 48rem) { .md\\:mt-8 > p { margin-top: 2rem } }`
   const [warning] = (await postcss([fluidVariants()]).process(css, { from: undefined })).warnings()

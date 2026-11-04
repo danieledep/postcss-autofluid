@@ -161,7 +161,8 @@ Every rule that has the specificity of one class — a single class selector, op
 - `hover:mt-8`, `group-hover:mt-8`, `first:mt-0`, `[&_p]:mt-4` — left alone; their extra specificity keeps beating the twins, exactly as in Tailwind
 - `md:mt-auto`, `max-w-none`, `w-fit`, `md:w-full`, `md:leading-none` — not lengths; the twin re-asserts the value so it keeps winning, and stops the interpolation below it
 - `padding: 0 20px`, `margin: 1px 2px 3px 4px`, `gap: 8px 12px`, `inset: 1px 2px` — split into their longhands first, so each component interpolates on its own
-- `border-radius: 1px 2px` — left alone; its values map to corners and the elliptical `/` form does not split
+- `border-radius: 1px 2px`, `rounded-[4px/8px]` — left alone; its values map to corners and the elliptical `/` form does not split
+- `md:rounded-full` — not a size: `calc(infinity * 1px)`, or `2147483647px` once optimized, is kept as written and stops the interpolation like a keyword
 - `mt-6!` — left alone; `!important` opts a declaration out
 - `md:flex`, `md:bg-red-500` — not a fluid property
 

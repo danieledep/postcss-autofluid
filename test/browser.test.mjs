@@ -30,6 +30,7 @@ const classes = [
   'w-64 md:w-full lg:w-96', 'w-full md:w-64 lg:w-96', 'mt-6 md:mt-auto lg:mt-12', 'leading-6 md:leading-none',
   'relative absolute top-0 left-0 md:top-4 mt-0',
   'h1 md:h0', 'h1 md:h2', 'h1 md:h3',
+  'rounded-sm md:rounded-2xl', 'rounded-[4px/8px] md:rounded-[16px/32px]', 'rounded-[4px_/_8px]', 'rounded-sm md:rounded-full',
 ]
 
 // Custom utilities with variants of their own: `md:h0` nests md inside md.
@@ -62,9 +63,13 @@ const html = `
   <p id="n0l" class="h1 md:h0"></p>
   <p id="n2" class="h1 md:h2"></p>
   <p id="n3" class="h1 md:h3"></p>
+  <div id="r1" class="rounded-sm md:rounded-2xl"></div>
+  <div id="r2" class="rounded-[4px/8px] md:rounded-[16px/32px]"></div>
+  <div id="r3" class="rounded-[4px_/_8px]"></div>
+  <div id="r4" class="rounded-sm md:rounded-full"></div>
 `
 
-const PROP = { c: 'paddingLeft', i: 'fontSize', w1: 'width', w2: 'width', l1: 'lineHeight', z1: 'top', n0: 'fontSize', n0l: 'lineHeight', n2: 'fontSize', n3: 'fontSize' }
+const PROP = { c: 'paddingLeft', i: 'fontSize', w1: 'width', w2: 'width', l1: 'lineHeight', z1: 'top', n0: 'fontSize', n0l: 'lineHeight', n2: 'fontSize', n3: 'fontSize', r1: 'borderTopLeftRadius', r2: 'borderTopLeftRadius', r3: 'borderTopLeftRadius', r4: 'borderTopLeftRadius' }
 
 const read = (PROP) =>
   Object.fromEntries(
@@ -96,7 +101,7 @@ for (const optimize of [false, true]) test(`computed styles match Tailwind at br
     for (const width of [320, 1536]) {
       assert.deepEqual(await at(width, fluid), await at(width, plain), `at ${width}px`)
     }
-    const md = ['a', 'b', 'child', 'c', 'd', 'e', 'h', 'w1', 'm1', 'l1', 'n0', 'n0l', 'n3']
+    const md = ['a', 'b', 'child', 'c', 'd', 'e', 'h', 'w1', 'm1', 'l1', 'n0', 'n0l', 'n3', 'r1', 'r2', 'r3', 'r4']
     const pick = (all) => Object.fromEntries(md.map((id) => [id, all[id]]))
     assert.deepEqual(pick(await at(768, fluid)), pick(await at(768, plain)), 'at 768px')
 
@@ -113,7 +118,10 @@ for (const optimize of [false, true]) test(`computed styles match Tailwind at br
       const fl = await at(width, fluid)
       const pl = await at(width, plain)
       for (const id of ['w1', 'm1', 'l1']) assert.equal(fl[id], pl[id], `${id} at ${width}px`)
+      // Slash radii and rounded-full (2147483647px when optimized) never interpolate.
+      for (const id of ['r2', 'r3', 'r4']) assert.equal(fl[id], pl[id], `${id} at ${width}px`)
     }
+    assert.equal(mid.r1, '10px') // rounded-sm 4px at 320px → rounded-2xl 16px at 768px
     // A breakpoint nested in the same breakpoint: the inner value wins from md up.
     for (const width of [900, 1100]) {
       const fl = await at(width, fluid)
