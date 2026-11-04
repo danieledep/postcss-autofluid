@@ -78,6 +78,14 @@ const UTILITY = /^\.(?:\\[0-9a-f]{1,6} ?|\\.|[^\s\\:>+~,[\].#*()])+(?::where\((?
 /** Tailwind v4 (`width >= 48rem`) and v3 (`min-width: 48rem`) breakpoint queries. */
 const MIN_WIDTH = /^\(\s*(?:min-width\s*:|width\s*>=)\s*([\d.]+)(rem|em|px)\s*\)$/
 
+/**
+ * Lengths this large are not sizes but stand-ins for infinity. Tailwind's
+ * `rounded-full` is `calc(infinity * 1px)`, which its optimizer folds into
+ * `2147483647px`; interpolating from `4px` towards that is already fully round
+ * a few pixels above the base. No real length reaches a million units.
+ */
+const HUGE = 1e6
+
 /** Values that cannot be interpolated. */
 const KEYWORD = /^(?:auto|none|normal|inherit|initial|unset|revert(?:-layer)?|(?:fit|min|max)-content)$/
 
@@ -96,6 +104,22 @@ function parts(value) {
     }
   }
   return out
+}
+
+/**
+ * Does the value have a `/` outside any parentheses? At the top level a slash
+ * is a separator, never division: `border-radius: 4px/8px` is horizontal over
+ * vertical radii. Inside `calc()` the same text would divide two lengths into
+ * a number, so such a value must never become a token.
+ */
+function slashed(value) {
+  let depth = 0
+  for (const ch of value) {
+    if (ch === '(') depth++
+    else if (ch === ')') depth--
+    else if (ch === '/' && depth === 0) return true
+  }
+  return false
 }
 
 /** The longhands a box shorthand sets: 2 values are axes, 3 and 4 are sides. */
@@ -194,20 +218,21 @@ function resolve(value, theme, seen = new Set()) {
  * Can this value take part in the interpolation? Only when, once its variables
  * are resolved, it is arithmetic over lengths in the allowed units: at least
  * one length, any number of plain multipliers, nothing else. Keywords, ratios
- * (`line-height: 1.5`), relative units and anything unresolvable are not; they
- * keep their literal value and stop the interpolation at their breakpoint.
+ * (`line-height: 1.5`), relative units, a top-level `/` (`4px/8px`), lengths
+ * standing in for infinity and anything unresolvable are not; they keep their
+ * literal value and stop the interpolation at their breakpoint.
  */
 function interpolable(value, theme, units) {
   if (KEYWORD.test(value)) return false
   const resolved = resolve(value, theme)
-  if (resolved == null) return false
+  if (resolved == null || slashed(resolved)) return false
   if (ZERO.test(resolved)) return true // a bare zero is a length
   let lengths = 0
   const rest = resolved
     .replace(MATH, '(')
-    .replace(/[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?([a-z%]*)/gi, (_, unit) => {
+    .replace(/[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?([a-z%]*)/gi, (number, unit) => {
       if (!unit) return ' '
-      if (units.has(unit.toLowerCase())) { lengths++; return ' ' }
+      if (units.has(unit.toLowerCase()) && Math.abs(parseFloat(number)) < HUGE) { lengths++; return ' ' }
       return '\0'
     })
   return lengths > 0 && /^[\s()+\-*/,]*$/.test(rest)

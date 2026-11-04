@@ -11,6 +11,14 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   declaration, so runners report a file and line.
 
 ### Fixed
+- Slash radii (`rounded-[4px/8px]`, and `rounded-[4px_/_8px]` once the
+  optimizer strips its spaces) rendered square at every width: the value was
+  tokenised, and inside `calc()` the slash divided the two lengths into a
+  number. A value with a top-level `/` is now fixed and kept as written.
+- `rounded-sm md:rounded-full` was fully round almost from the base in
+  production builds, where the optimizer folds `calc(infinity * 1px)` into
+  `2147483647px` and that was interpolated. Lengths of a million units or
+  more are now fixed.
 - A custom `@utility` with its own `@variant md`, used as `md:`, rendered the
   outer value from md up: the nested value's token was published under a
   redundant media query and then overridden by the outer one. Min-width
