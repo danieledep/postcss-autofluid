@@ -323,13 +323,15 @@ test('does not warn about responsive CSS outside the layers it reads', async () 
   assert.deepEqual(await warningsFor(css), [])
 })
 
-test('interpolates lengths resolved through the theme, and nothing else', async () => {
+test('interpolates every length, percentages and viewport units included, and nothing else', async () => {
   const css = themed(`@layer utilities {
     .w-64 { width: calc(var(--spacing) * 64) }
     .w-full { width: 100% }
     .w-1\\/2 { width: calc(1/2 * 100%) }
     .w-screen { width: 100vw }
+    .w-\\[50cqw\\] { width: 50cqw }
     .w-\\(--x\\) { width: var(--x) }
+    .w-fit { width: fit-content }
     .max-w-md { max-width: var(--container-md) }
     @media (width >= 48rem) {
       .md\\:w-96 { width: calc(var(--spacing) * 96) }
@@ -339,17 +341,30 @@ test('interpolates lengths resolved through the theme, and nothing else', async 
   const out = flat(await appendix(css))
   assert.match(out, /\.w-64 \{ --fl-width-0: calc\(var\(--spacing\) \* 64\); width: --fl-width\(\); \}/)
   assert.match(out, /\.max-w-md \{ --fl-max-width-0: var\(--container-md\);/)
-  // percentages, viewport units and unknown variables keep their value
-  assert.match(out, /\.w-full \{ width: 100%; \}/)
-  assert.match(out, /\.w-1\\\/2 \{ width: calc\(1\/2 \* 100%\); \}/)
-  assert.match(out, /\.w-screen \{ width: 100vw; \}/)
+  // calc() mixes them with rem, so the two ends need not share a unit
+  assert.match(out, /\.w-full \{ --fl-width-0: 100%; width: --fl-width\(\); \}/)
+  assert.match(out, /\.w-1\\\/2 \{ --fl-width-0: calc\(1\/2 \* 100%\);/)
+  assert.match(out, /\.w-screen \{ --fl-width-0: 100vw;/)
+  assert.match(out, /\.w-\\\[50cqw\\\] \{ --fl-width-0: 50cqw;/)
+  // keywords and unknown variables keep their value
   assert.match(out, /\.w-\\\(--x\\\) \{ width: var\(--x\); \}/)
-  assert.doesNotMatch(out, /--fl-width-0: (100%|calc\(1\/2|100vw|var\(--x\))/)
+  assert.match(out, /\.w-fit \{ width: fit-content; \}/)
+  assert.doesNotMatch(out, /--fl-width-0: (fit-content|var\(--x\))/)
 })
 
-test('lets units opt relative lengths back in', async () => {
-  const css = `.w-full { width: 100% } @media (width >= 48rem) { .md\\:w-64 { width: 16rem } }`
-  assert.match(flat(await appendix(css, { units: ['rem', '%'] })), /\.w-full \{ --fl-width-0: 100%;/)
+test('keeps percentages fixed where an unresolvable one turns the value into auto', async () => {
+  const css = `.h-12 { height: 3rem } .top-4 { top: 1rem } .min-h-12 { min-height: 3rem }
+    @media (width >= 48rem) {
+      .md\\:h-1\\/2 { height: 50% } .md\\:h-\\[50vh\\] { height: 50vh }
+      .md\\:top-1\\/2 { top: 50% } .md\\:min-h-full { min-height: 100% }
+    }`
+  const out = flat(await appendix(css))
+  assert.match(out, /\.md\\:h-1\\\/2 \{ --fl-height-48rem-stop: 1; \}/)
+  assert.match(out, /\.md\\:h-\\\[50vh\\\] \{ --fl-height-48rem: 50vh;/)
+  // top's only responsive value is fixed, so top is left alone
+  assert.doesNotMatch(out, /--fl-top/)
+  // min-height resolves such a percentage to 0, so it may interpolate
+  assert.match(out, /\.md\\:min-h-full \{ --fl-min-height-48rem: 100%;/)
 })
 
 test('interpolates line-height ratios on a family of their own, walled off from lengths', async () => {
@@ -369,12 +384,12 @@ test('interpolates line-height ratios on a family of their own, walled off from 
 test('a fixed value at a breakpoint is a wall the band below cannot see past', async () => {
   const css = themed(`@layer utilities {
     .w-64 { width: calc(var(--spacing) * 64) }
-    @media (width >= 48rem) { .md\\:w-full { width: 100% } }
+    @media (width >= 48rem) { .md\\:w-auto { width: auto } }
     @media (width >= 64rem) { .lg\\:w-96 { width: calc(var(--spacing) * 96) } }
   }`)
   const out = flat(await appendix(css))
   // the stop is published without the breakpoint, the value re-asserted inside it
-  assert.match(out, /\.md\\:w-full \{ --fl-width-48rem-stop: 1; \} @media \(width >= 48rem\) \{ \.md\\:w-full \{ width: 100%; \}/)
+  assert.match(out, /\.md\\:w-auto \{ --fl-width-48rem-stop: 1; \} @media \(width >= 48rem\) \{ \.md\\:w-auto \{ width: auto; \}/)
   assert.match(out, /@function --fl\(--v0, --v48rem, --v64rem, --s48rem\)/)
   assert.match(out, /--hi: if\(style\(--s48rem\): var\(--lo\); style\(--v48rem\): var\(--v48rem\); style\(--v64rem\): var\(--v64rem\); else: var\(--lo\)\)/)
   assert.match(out, /--hi-w: if\(style\(--s48rem\): 48rem; style\(--v48rem\): 48rem; style\(--v64rem\): 64rem; else: 99999px\)/)
@@ -383,7 +398,7 @@ test('a fixed value at a breakpoint is a wall the band below cannot see past', a
 })
 
 test('a property whose only responsive values are fixed is left alone', async () => {
-  const css = themed(`@layer utilities { .w-64 { width: 16rem } @media (width >= 48rem) { .md\\:w-full { width: 100% } } }`)
+  const css = themed(`@layer utilities { .w-64 { width: 16rem } @media (width >= 48rem) { .md\\:w-auto { width: auto } } }`)
   assert.equal(await run(css), css)
 })
 

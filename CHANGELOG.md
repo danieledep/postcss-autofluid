@@ -6,6 +6,16 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Percentages, viewport units and container units interpolate by default
+  (`w-12 md:w-1/2`, `w-full md:w-64`, `mt-[2vw]`). `calc()` mixes them with
+  other lengths, so the ends of a curve need not share a unit. Percentages
+  stay fixed on `height`, `max-height`, `flex-basis`, `top`, `bottom` and
+  `inset`, where an unresolvable one turns the whole value into `auto`.
+
+### Removed
+- The `units` option. Every length unit now interpolates.
+
 ### Added
 - Logical properties are fluid by default: `margin-inline-start` and the
   other start/end longhands for margins, paddings, scroll margins and

@@ -99,13 +99,15 @@ Three fences decide what the plugin touches, so it stays out of everything that 
 
 **Value.** Lengths interpolate, and so do the unitless `line-height` ratios that `text-*` ships, on a family of their own. Before deciding, the plugin resolves `var()` through the theme variables Tailwind emits on `:root` (and your own root variables), so `calc(var(--spacing) * 8)` or `var(--text-xl)` is known to be `2rem` or `1.25rem` at build time. Then:
 
-- interpolated: `px`, `rem`, `em` and the other absolute or font-relative lengths, and `calc()` / `min()` / `max()` / `clamp()` over them — `mt-8`, `text-xl`, `w-96`, `max-w-md`, `mt-[31px]`, `tracking-tight`
+- interpolated: every length — `px`, `rem`, `em` and the other absolute or font-relative units, percentages, viewport and container units — and `calc()` / `min()` / `max()` / `clamp()` over them: `mt-8`, `text-xl`, `w-96`, `max-w-md`, `mt-[31px]`, `tracking-tight`, `w-full`, `w-1/2`, `w-screen`, `mt-[2vw]`
 - interpolated against each other, never against a length: unitless `line-height` values — the ratios `text-*` sets (`text-sm md:text-lg`), `leading-none`, `leading-tight`
-- kept as written: keywords (`auto`, `none`, `fit-content`…), percentages (`w-full`, `w-1/2`, `p-[10%]`), viewport and container units (`w-screen`, `h-dvh`, `mt-[2vw]`), unitless numbers on any other property, and variables that can't be resolved at build time (`mt-(--gap)` with `--gap` set somewhere other than the root)
+- kept as written: keywords (`auto`, `none`, `fit-content`…), unitless numbers on any other property, variables that can't be resolved at build time (`mt-(--gap)` with `--gap` set somewhere other than the root), and percentages on `height`, `max-height`, `flex-basis`, `top`, `bottom` and `inset` (see below)
 
-Percentages and viewport units are valid in `calc()`, but the interpolation runs over the viewport: a curve from `16rem` to `50%` would bend with the parent's width rather than the screen's. Opt them back in with `units` if that is what you want.
+The two ends of a curve need not share a unit, since `calc()` mixes them: `w-12 md:w-1/2` runs from `3rem` at `20rem` to exactly half the parent at `md`. Between the breakpoints the curve is straight in the viewport, so a percentage end bends with the parent's width and a `vh` end with the screen's height; the values at the breakpoints are always Tailwind's.
 
-A kept value at a breakpoint is a wall, and so is a value of the other kind (a length where ratios interpolate, or the reverse). In `w-64 md:w-full lg:w-96` the width stays `16rem` up to `md`, is `100%` from `md` to `lg`, and is `24rem` above — exactly Tailwind — rather than bending towards `24rem` below `md`. The twin publishes a stop token at `md` that the interpolator checks before looking further up.
+Percentage heights and vertical offsets are the exception. When the parent's height is auto, such a percentage can't resolve and the browser drops the *whole* value to auto, `3rem` and all, so `h-12 md:h-1/2` would lose `h-12` below `md`. On those properties a percentage is kept as written; `vh`, `dvh` and lengths still interpolate.
+
+A kept value at a breakpoint is a wall, and so is a value of the other kind (a length where ratios interpolate, or the reverse). In `w-64 md:w-fit lg:w-96` the width stays `16rem` up to `md`, is `fit-content` from `md` to `lg`, and is `24rem` above — exactly Tailwind — rather than bending towards `24rem` below `md`. The twin publishes a stop token at `md` that the interpolator checks before looking further up.
 
 ### Container queries
 
@@ -134,13 +136,10 @@ The output survives esbuild, Lightning CSS and cssnano minification unchanged in
   containerMinWidth: …,  // container width where the base value sits for @md: and friends; defaults to minWidth
   properties: [...],     // which properties to make fluid (see index.js for defaults)
   layers: 'auto',        // 'auto': utilities if present, else all; null: all; or a list of layer names
-  units: [...],          // units that interpolate; default: px, rem, em and other absolute lengths
 }
 ```
 
 `layers: 'auto'` reads `@layer utilities` when the stylesheet has one and every rule otherwise. Pass a list to name the layers yourself, or `null` to read everything regardless.
-
-`units` lists the units a value may use to interpolate. Add `'%'` or `'vw'` to let `w-full md:w-64` or `mt-[2vw]` take part, accepting that the curve then depends on the parent or the viewport twice over.
 
 Values are copied verbatim once they pass the fence, so the token is still resolved on the element: a per-element `[--spacing:1px]` override applies, as do arbitrary values like `mt-[31px]` and `w-[calc(2rem+3px)]`.
 
@@ -169,7 +168,7 @@ Every rule that has the specificity of one class — a single class selector, op
 - `dark:mt-10`, `max-md:mt-2`, `print:mt-0`, `@md/card:mt-8` (named container), `supports-[…]:mt-4` — yes: the value becomes the *base* token, under that condition
 - `dark:md:mt-4`, `md:max-lg:mt-8` — yes: the `md` token, under the remaining condition
 - `hover:mt-8`, `group-hover:mt-8`, `first:mt-0`, `[&_p]:mt-4` — left alone; their extra specificity keeps beating the twins, exactly as in Tailwind
-- `md:mt-auto`, `max-w-none`, `w-fit`, `md:w-full`, `md:leading-none` — not lengths; the twin re-asserts the value so it keeps winning, and stops the interpolation below it
+- `md:mt-auto`, `max-w-none`, `w-fit`, `md:h-full`, `md:leading-none` — not lengths (or, for `h-full`, a percentage that may not resolve); the twin re-asserts the value so it keeps winning, and stops the interpolation below it
 - `padding: 0 20px`, `margin: 1px 2px 3px 4px`, `gap: 8px 12px`, `inset: 1px 2px`, `margin-inline: 4px 8px` — split into their longhands first, so each component interpolates on its own
 - `border-radius: 1px 2px`, `rounded-[4px/8px]` — left alone; its values map to corners and the elliptical `/` form does not split
 - `md:rounded-full` — not a size: `calc(infinity * 1px)`, or `2147483647px` once optimized, is kept as written and stops the interpolation like a keyword

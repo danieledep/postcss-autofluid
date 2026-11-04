@@ -55,13 +55,32 @@ function expand(...shorthands) {
 }
 
 /**
- * Units that interpolate by default: lengths that do not depend on the
- * containing block or the viewport. `%`, `vw`, `cqw` and friends are left out
- * on purpose: the interpolation runs over the viewport, so a curve between
- * `16rem` and `50%` would bend with the parent's width, not with the screen.
- * They are valid in `calc()` and can be opted in with the `units` option.
+ * Every CSS length unit, plus `%`. They all mix in `calc()`, so the two ends
+ * of a curve need not agree: `w-12 md:w-1/2` runs from `3rem` to `50%`. The
+ * interpolation runs over the viewport (or the container), so a curve that
+ * ends on a percentage, or on a container unit under a viewport breakpoint,
+ * bends with whatever that unit measures; the ends are exact either way.
  */
-const LENGTH_UNITS = ['px', 'rem', 'em', 'ch', 'ex', 'lh', 'rlh', 'cap', 'ic', 'rch', 'rex', 'rcap', 'ric', 'pt', 'pc', 'in', 'cm', 'mm', 'q']
+const LENGTH_UNITS = new Set([
+  'px', 'rem', 'em', 'ch', 'ex', 'lh', 'rlh', 'cap', 'ic', 'rch', 'rex', 'rcap', 'ric', 'pt', 'pc', 'in', 'cm', 'mm', 'q',
+  '%',
+  ...['', 's', 'l', 'd'].flatMap((p) => ['vw', 'vh', 'vi', 'vb', 'vmin', 'vmax'].map((u) => p + u)),
+  'cqw', 'cqh', 'cqi', 'cqb', 'cqmin', 'cqmax',
+])
+
+/**
+ * Properties where a percentage that cannot be resolved (an auto-height
+ * parent, an indefinite flex container, a relatively positioned box) turns
+ * the whole value into `auto`, sum and all. `calc(3rem + (50% - 3rem) * 0)`
+ * is then not 3rem but auto, so `h-12 md:h-1/2` would lose `h-12` below `md`
+ * in exactly the layouts where plain Tailwind keeps it. Measured in Chromium:
+ * `min-height` and `row-gap` resolve such a percentage to 0 and are safe.
+ * Percentages stay fixed on these; every other length still interpolates.
+ */
+const PERCENT_AUTO = new Set([
+  'height', 'max-height', 'block-size', 'max-block-size', 'flex-basis',
+  'inset', 'top', 'bottom', 'inset-block', 'inset-block-start', 'inset-block-end',
+])
 
 /**
  * A bare zero. As a property value it is a length, but inside `calc()` it is a
@@ -237,13 +256,14 @@ function resolve(value, theme, seen = new Set()) {
 
 /**
  * Can this value take part in the interpolation? Only when, once its variables
- * are resolved, it is arithmetic over lengths in the allowed units: at least
+ * are resolved, it is arithmetic over lengths (`%` included): at least
  * one length, any number of plain multipliers, nothing else. Keywords, ratios
- * (`line-height: 1.5`), relative units, a top-level `/` (`4px/8px`), lengths
+ * (`line-height: 1.5`), a top-level `/` (`4px/8px`), lengths
  * standing in for infinity and anything unresolvable are not; they keep their
- * literal value and stop the interpolation at their breakpoint.
+ * literal value and stop the interpolation at their breakpoint. `percent` is
+ * false on the `PERCENT_AUTO` properties.
  */
-function interpolable(value, theme, units) {
+function interpolable(value, theme, percent = true) {
   if (KEYWORD.test(value)) return false
   const resolved = resolve(value, theme)
   if (resolved == null || slashed(resolved)) return false
@@ -253,7 +273,8 @@ function interpolable(value, theme, units) {
     .replace(MATH, '(')
     .replace(/[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?([a-z%]*)/gi, (number, unit) => {
       if (!unit) return ' '
-      if (units.has(unit.toLowerCase()) && Math.abs(parseFloat(number)) < HUGE) { lengths++; return ' ' }
+      const u = unit.toLowerCase()
+      if ((u === '%' ? percent : LENGTH_UNITS.has(u)) && Math.abs(parseFloat(number)) < HUGE) { lengths++; return ' ' }
       return '\0'
     })
   return lengths > 0 && /^[\s()+\-*/,]*$/.test(rest)
@@ -366,11 +387,9 @@ function fluidVariants(options = {}) {
     containerMinWidth = minWidth,
     properties = DEFAULT_PROPERTIES,
     layers = 'auto',
-    units = LENGTH_UNITS,
   } = options
 
   const fluidable = new Set(properties)
-  const lengthUnits = new Set(units.map((u) => u.toLowerCase()))
   const fn = `--${prefix}`
   const token = (prop, key) => `--${prefix}-${prop}-${key}`
   // A fixed value at a breakpoint publishes this instead of a value token.
@@ -429,7 +448,7 @@ function fluidVariants(options = {}) {
       // `<prop>-num` for unitless numbers where those are valid, none (fixed)
       // for everything else.
       const channelOf = (prop, value, vars) =>
-        interpolable(value, vars, lengthUnits)
+        interpolable(value, vars, !PERCENT_AUTO.has(prop))
           ? prop
           : NUMBER_PROPS.has(prop) && numeric(value, vars)
             ? `${prop}-num`

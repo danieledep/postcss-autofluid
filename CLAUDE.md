@@ -66,12 +66,17 @@ assembles whatever co-occurs on an element.
   (`line-height`). `interpolable()` resolves `var()` through root custom
   properties (Tailwind emits used theme variables on `:root, :host`) and the
   rule's own custom properties (`space-y-*` sets `--tw-space-y-reverse`), and
-  accepts arithmetic over the `units` set (absolute and font-relative lengths
-  by default) with at least one length. Keywords, `%`, viewport and
-  container units, other unitless numbers and unresolvable variables are
-  *fixed*: re-asserted verbatim, never tokenised. `%` was excluded
-  deliberately — the curve runs over the viewport, a percentage tracks the
-  parent.
+  accepts arithmetic over `LENGTH_UNITS` (every CSS length, viewport and
+  container units and `%` included) with at least one length. `calc()`
+  mixes them, so the ends of a curve need not share a unit. Keywords, other
+  unitless numbers and unresolvable variables are *fixed*: re-asserted
+  verbatim, never tokenised. There is no `units` option; it was removed in
+  favour of interpolating everything `calc()` can mix.
+- `%` stays fixed on `PERCENT_AUTO` (`height`, `max-height`, `flex-basis`,
+  `top`, `bottom`, `inset`, block-axis forms). There an unresolvable
+  percentage (auto-height parent, relative box) turns the *whole* `calc()`
+  into auto, so `h-12 md:h-1/2` lost `h-12` below md. `min-height` and
+  `row-gap` resolve it to 0 instead and are safe (measured in Chromium).
 - Tokens belong to a *channel*: the property itself for lengths,
   `<prop>-num` for numbers. Each channel has its own tokens and wrapper; a
   value of another channel (or a fixed one) at a breakpoint publishes a stop
@@ -112,7 +117,9 @@ computed styles against plain Tailwind at a dozen widths:
 - `w-64 md:w-full lg:w-96` rendered 923px and 441px between md and lg (should
   be 100%): `100%` is not a keyword, so it was tokenised and interpolated
   against `24rem`; and `md:mt-auto` let the band below bend towards `lg`.
-  Hence the length-only fence and the stop tokens.
+  Hence the length-only fence and the stop tokens. (Percentages were later
+  let back in on purpose: `md:w-full` now bends towards `lg:w-96`. The
+  keyword half of the fix stands.)
 - Tailwind's optimizer rewrites `calc(var(--spacing) * 0)` to a bare `0`. As
   a token, `0` inside `calc()` is a <number>, so the interpolation was invalid
   and `top-0`, `left-0`, `m-0`, `inset-0` fell back to `auto`/initial in every
