@@ -136,10 +136,13 @@ The output survives esbuild, Lightning CSS and cssnano minification unchanged in
   prefix: 'fl',          // token and function names: --fl, --fl-<prop>, --fl-<prop>-<bp>
   minWidth: '20rem',     // viewport where the base (unprefixed) value sits
   containerMinWidth: …,  // container width where the base value sits for @md: and friends; defaults to minWidth
-  properties: [...],     // which properties to make fluid (see index.js for defaults)
+  properties: [...],     // which properties to make fluid; replaces the default list (see index.js)
+  exclude: [],           // properties to leave out of that list
   layers: 'auto',        // 'auto': utilities if present, else all; null: all; or a list of layer names
 }
 ```
+
+`exclude` is the way to drop a few properties and keep the rest: `exclude: ['max-width']` keeps Tailwind's `container` stepping at its breakpoints. Names are exact, so excluding `padding` leaves `padding-top` and the other longhands fluid. `properties` replaces the whole list instead.
 
 `layers: 'auto'` reads `@layer utilities` when the stylesheet has one and every rule otherwise. Pass a list to name the layers yourself, or `null` to read everything regardless.
 
@@ -177,7 +180,7 @@ Every rule that has the specificity of one class — a single class selector, op
 - `mt-6!` — left alone; `!important` opts a declaration out
 - `md:flex`, `md:bg-red-500` — not a fluid property
 
-Tailwind's own `container` class is picked up like anything else: it sets `max-width` once per breakpoint, so those steps become an interpolation and the container tracks the viewport instead of jumping. Drop `max-width` from `properties` to keep the steps.
+Tailwind's own `container` class is picked up like anything else: it sets `max-width` once per breakpoint, so those steps become an interpolation and the container tracks the viewport instead of jumping. Pass `exclude: ['max-width']` to keep the steps.
 
 If a stylesheet has responsive values for fluid properties and none of them can be read, the plugin emits a PostCSS warning rather than quietly producing nothing.
 

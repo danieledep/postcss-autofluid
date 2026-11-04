@@ -17,6 +17,8 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The `units` option. Every length unit now interpolates.
 
 ### Added
+- `exclude` option: properties to leave out of the fluid list, so one can
+  be dropped without restating the other hundred.
 - Border widths (`border-*`, `border-x-*`, `border-s-*`, `divide-x-*`, …),
   `outline-width` and `outline-offset` are fluid. A multi-value
   `border-width` splits into its sides or axes.

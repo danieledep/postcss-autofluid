@@ -416,6 +416,17 @@ test('reads Tailwind 3 transforms, which compose every axis in transform', async
   assert.match(out, /\.md\\:scale-150 \{ --fl-tw-scale-x-768px: 1\.5;/)
 })
 
+test('exclude leaves the named properties out of the list, and only those', async () => {
+  const css = `.max-w-md { max-width: 28rem } .mt-6 { margin-top: 1.5rem } .p-4 { padding: 1rem } .pt-4 { padding-top: 1rem }
+    @media (width >= 48rem) { .md\\:max-w-xl { max-width: 36rem } .md\\:mt-8 { margin-top: 2rem } .md\\:p-8 { padding: 2rem } .md\\:pt-8 { padding-top: 2rem } }`
+  const out = flat(await appendix(css, { exclude: ['max-width', 'padding'] }))
+  assert.doesNotMatch(out, /--fl-max-width|--fl-padding-0|--fl-padding-48rem/)
+  assert.match(out, /--fl-margin-top-48rem: 2rem/)
+  assert.match(out, /--fl-padding-top-48rem: 2rem/)
+  // it applies to a custom list too
+  assert.doesNotMatch(flat(await appendix(css, { properties: ['margin-top', 'max-width'], exclude: ['max-width'] })), /--fl-max-width/)
+})
+
 test('interpolates line-height ratios on a family of their own, walled off from lengths', async () => {
   const css = themed(`@layer utilities {
     .leading-6 { line-height: calc(var(--spacing) * 6) }
