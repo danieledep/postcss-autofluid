@@ -323,13 +323,15 @@ test('does not warn about responsive CSS outside the layers it reads', async () 
   assert.deepEqual(await warningsFor(css), [])
 })
 
-test('interpolates lengths resolved through the theme, and nothing else', async () => {
+test('interpolates every length, percentages and viewport units included, and nothing else', async () => {
   const css = themed(`@layer utilities {
     .w-64 { width: calc(var(--spacing) * 64) }
     .w-full { width: 100% }
     .w-1\\/2 { width: calc(1/2 * 100%) }
     .w-screen { width: 100vw }
+    .w-\\[50cqw\\] { width: 50cqw }
     .w-\\(--x\\) { width: var(--x) }
+    .w-fit { width: fit-content }
     .max-w-md { max-width: var(--container-md) }
     @media (width >= 48rem) {
       .md\\:w-96 { width: calc(var(--spacing) * 96) }
@@ -339,17 +341,79 @@ test('interpolates lengths resolved through the theme, and nothing else', async 
   const out = flat(await appendix(css))
   assert.match(out, /\.w-64 \{ --fl-width-0: calc\(var\(--spacing\) \* 64\); width: --fl-width\(\); \}/)
   assert.match(out, /\.max-w-md \{ --fl-max-width-0: var\(--container-md\);/)
-  // percentages, viewport units and unknown variables keep their value
-  assert.match(out, /\.w-full \{ width: 100%; \}/)
-  assert.match(out, /\.w-1\\\/2 \{ width: calc\(1\/2 \* 100%\); \}/)
-  assert.match(out, /\.w-screen \{ width: 100vw; \}/)
+  // calc() mixes them with rem, so the two ends need not share a unit
+  assert.match(out, /\.w-full \{ --fl-width-0: 100%; width: --fl-width\(\); \}/)
+  assert.match(out, /\.w-1\\\/2 \{ --fl-width-0: calc\(1\/2 \* 100%\);/)
+  assert.match(out, /\.w-screen \{ --fl-width-0: 100vw;/)
+  assert.match(out, /\.w-\\\[50cqw\\\] \{ --fl-width-0: 50cqw;/)
+  // keywords and unknown variables keep their value
   assert.match(out, /\.w-\\\(--x\\\) \{ width: var\(--x\); \}/)
-  assert.doesNotMatch(out, /--fl-width-0: (100%|calc\(1\/2|100vw|var\(--x\))/)
+  assert.match(out, /\.w-fit \{ width: fit-content; \}/)
+  assert.doesNotMatch(out, /--fl-width-0: (fit-content|var\(--x\))/)
 })
 
-test('lets units opt relative lengths back in', async () => {
-  const css = `.w-full { width: 100% } @media (width >= 48rem) { .md\\:w-64 { width: 16rem } }`
-  assert.match(flat(await appendix(css, { units: ['rem', '%'] })), /\.w-full \{ --fl-width-0: 100%;/)
+test('interpolates percentage heights and offsets too', async () => {
+  const css = `.h-12 { height: 3rem } .top-4 { top: 1rem }
+    @media (width >= 48rem) { .md\\:h-1\\/2 { height: 50% } .md\\:top-1\\/2 { top: 50% } }`
+  const out = flat(await appendix(css))
+  assert.match(out, /\.md\\:h-1\\\/2 \{ --fl-height-48rem: 50%; \}/)
+  assert.match(out, /\.md\\:top-1\\\/2 \{ --fl-top-48rem: 50%; \}/)
+})
+
+test('splits border widths into their sides and axes', async () => {
+  const css = `.border-2 { border-width: 2px } .border-\\[1px_2px\\] { border-width: 1px 2px } .border-x-2 { border-inline-width: 2px 4px }
+    @media (width >= 48rem) { .md\\:border-8 { border-width: 8px } .md\\:border-y-4 { border-block-width: 4px } .md\\:border-s-4 { border-inline-start-width: 4px } }`
+  const out = flat(await appendix(css))
+  assert.match(out, /\.border-2 \{ --fl-border-width-0: 2px; border-width: --fl-border-width\(\); \}/)
+  // only the longhands with a responsive value anywhere get tokens
+  assert.match(out, /\.border-\\\[1px_2px\\\] \{ --fl-border-block-width-0: 1px; border-block-width: --fl-border-block-width\(\); \}/)
+  assert.match(out, /\.border-x-2 \{ --fl-border-inline-start-width-0: 2px; border-inline-start-width: --fl-border-inline-start-width\(\); \}/)
+  assert.match(out, /\.md\\:border-y-4 \{ --fl-border-block-width-48rem: 4px; \}/)
+})
+
+test('interpolates Tailwind transform variables, rotate angles and opacity', async () => {
+  const css = themed(`@layer utilities {
+    .translate-x-4 { --tw-translate-x: calc(var(--spacing) * 4); translate: var(--tw-translate-x) var(--tw-translate-y) }
+    .scale-100 { --tw-scale-x: 100%; --tw-scale-y: 100%; --tw-scale-z: 100%; scale: var(--tw-scale-x) var(--tw-scale-y) }
+    .-scale-y-110 { --tw-scale-y: calc(110% * -1); scale: var(--tw-scale-x) var(--tw-scale-y) }
+    .rotate-0 { rotate: 0 } .opacity-50 { opacity: 50% } .opacity-0 { opacity: 0 }
+    .rotate-x-12 { --tw-rotate-x: rotateX(12deg) }
+    @media (width >= 48rem) {
+      .md\\:translate-x-1\\/2 { --tw-translate-x: calc(1 / 2 * 100%); translate: var(--tw-translate-x) var(--tw-translate-y) }
+      .md\\:scale-150 { --tw-scale-x: 150%; --tw-scale-y: 150%; --tw-scale-z: 150%; scale: var(--tw-scale-x) var(--tw-scale-y) }
+      .md\\:rotate-45 { rotate: 45deg } .md\\:opacity-100 { opacity: 1 } .md\\:rotate-x-45 { --tw-rotate-x: rotateX(45deg) }
+    }
+  }`)
+  const out = flat(await appendix(css))
+  // the variable is the property; its tokens drop the leading dashes
+  assert.match(out, /\.translate-x-4 \{ --fl-tw-translate-x-0: calc\(var\(--spacing\) \* 4\); --tw-translate-x: --fl-tw-translate-x\(\); \}/)
+  assert.match(out, /@function --fl-tw-translate-x\(\) \{ result: --fl\(var\(--fl-tw-translate-x-0\), var\(--fl-tw-translate-x-48rem\)\); \}/)
+  assert.match(out, /\.md\\:translate-x-1\\\/2 \{ --fl-tw-translate-x-48rem: calc\(1 \/ 2 \* 100%\); \}/)
+  // a ratio's percentage is published as its number
+  assert.match(out, /\.scale-100 \{ --fl-tw-scale-x-0: 1; --fl-tw-scale-y-0: 1; --fl-tw-scale-z-0: 1; --tw-scale-x: --fl-tw-scale-x\(\);/)
+  assert.match(out, /\.-scale-y-110 \{ --fl-tw-scale-y-0: calc\(1\.1 \* -1\);/)
+  assert.match(out, /\.md\\:scale-150 \{ --fl-tw-scale-x-48rem: 1\.5;/)
+  assert.match(out, /\.opacity-50 \{ --fl-opacity-0: 0\.5;/)
+  assert.match(out, /\.opacity-0 \{ --fl-opacity-0: 0;/)
+  assert.match(out, /\.md\\:opacity-100 \{ --fl-opacity-48rem: 1; \}/)
+  // an angle's zero is 0deg; transform functions are not values
+  assert.match(out, /\.rotate-0 \{ --fl-rotate-0: 0deg;/)
+  assert.match(out, /\.md\\:rotate-45 \{ --fl-rotate-48rem: 45deg; \}/)
+  assert.doesNotMatch(out, /--fl-tw-rotate-x/)
+  // the composed `translate` / `scale` declarations are left to Tailwind
+  assert.doesNotMatch(out, /--fl-translate|--fl-scale-/)
+})
+
+test('reads Tailwind 3 transforms, which compose every axis in transform', async () => {
+  const css = `.rotate-0 { --tw-rotate: 0deg; transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) }
+    .scale-100 { --tw-scale-x: 1; --tw-scale-y: 1; transform: translate(var(--tw-translate-x), var(--tw-translate-y)) scale(var(--tw-scale-x), var(--tw-scale-y)) }
+    @media (min-width: 768px) {
+      .md\\:rotate-45 { --tw-rotate: 45deg; transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) }
+      .md\\:scale-150 { --tw-scale-x: 1.5; --tw-scale-y: 1.5; transform: translate(var(--tw-translate-x), var(--tw-translate-y)) scale(var(--tw-scale-x), var(--tw-scale-y)) }
+    }`
+  const out = flat(await appendix(css))
+  assert.match(out, /\.rotate-0 \{ --fl-tw-rotate-0: 0deg; --tw-rotate: --fl-tw-rotate\(\); \}/)
+  assert.match(out, /\.md\\:scale-150 \{ --fl-tw-scale-x-768px: 1\.5;/)
 })
 
 test('interpolates line-height ratios on a family of their own, walled off from lengths', async () => {
@@ -369,12 +433,12 @@ test('interpolates line-height ratios on a family of their own, walled off from 
 test('a fixed value at a breakpoint is a wall the band below cannot see past', async () => {
   const css = themed(`@layer utilities {
     .w-64 { width: calc(var(--spacing) * 64) }
-    @media (width >= 48rem) { .md\\:w-full { width: 100% } }
+    @media (width >= 48rem) { .md\\:w-auto { width: auto } }
     @media (width >= 64rem) { .lg\\:w-96 { width: calc(var(--spacing) * 96) } }
   }`)
   const out = flat(await appendix(css))
   // the stop is published without the breakpoint, the value re-asserted inside it
-  assert.match(out, /\.md\\:w-full \{ --fl-width-48rem-stop: 1; \} @media \(width >= 48rem\) \{ \.md\\:w-full \{ width: 100%; \}/)
+  assert.match(out, /\.md\\:w-auto \{ --fl-width-48rem-stop: 1; \} @media \(width >= 48rem\) \{ \.md\\:w-auto \{ width: auto; \}/)
   assert.match(out, /@function --fl\(--v0, --v48rem, --v64rem, --s48rem\)/)
   assert.match(out, /--hi: if\(style\(--s48rem\): var\(--lo\); style\(--v48rem\): var\(--v48rem\); style\(--v64rem\): var\(--v64rem\); else: var\(--lo\)\)/)
   assert.match(out, /--hi-w: if\(style\(--s48rem\): 48rem; style\(--v48rem\): 48rem; style\(--v64rem\): 64rem; else: 99999px\)/)
@@ -383,7 +447,7 @@ test('a fixed value at a breakpoint is a wall the band below cannot see past', a
 })
 
 test('a property whose only responsive values are fixed is left alone', async () => {
-  const css = themed(`@layer utilities { .w-64 { width: 16rem } @media (width >= 48rem) { .md\\:w-full { width: 100% } } }`)
+  const css = themed(`@layer utilities { .w-64 { width: 16rem } @media (width >= 48rem) { .md\\:w-auto { width: auto } } }`)
   assert.equal(await run(css), css)
 })
 
