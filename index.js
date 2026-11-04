@@ -406,10 +406,14 @@ function fluidVariants(options = {}) {
     minWidth = '20rem',
     containerMinWidth = minWidth,
     properties = DEFAULT_PROPERTIES,
+    exclude = [],
     layers = 'auto',
   } = options
 
+  // `exclude` names properties exactly: leaving out `padding` keeps
+  // `padding-top` fluid.
   const fluidable = new Set(properties)
+  for (const prop of exclude) fluidable.delete(prop)
   const fn = `--${prefix}`
   // `--tw-scale-x` names its tokens `--fl-tw-scale-x-*`.
   const slug = (name) => name.replace(/^-+/, '')
