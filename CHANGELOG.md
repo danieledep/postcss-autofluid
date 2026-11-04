@@ -6,11 +6,31 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Logical properties are fluid by default: `margin-inline-start` and the
+  other start/end longhands for margins, paddings, scroll margins and
+  paddings and insets (`ms-*`, `pe-*`, `start-*`, `end-*`), and the logical
+  corner radii (`rounded-s-*`, `rounded-ss-*`, …). Two-value
+  `margin-inline` and friends split into their start and end.
+- `space-x-*` and `space-y-*` are fluid. Their twins target the same
+  children at the same zero specificity, and a rule's own custom properties
+  (`--tw-space-y-reverse`) count as known when classifying its values.
+- Unitless `line-height` values interpolate on a token family of their own
+  (`--fl-line-height-num-*`), so the ratios `text-*` sets glide with the
+  font size. A ratio and a length are walls for each other.
+- Unnamed container queries (`@md:`) interpolate over the container width
+  (`100cqw`), from `containerMinWidth` (new option, defaults to `minWidth`).
+  Outside a container the base value holds.
+
 ### Changed
 - The "nothing was made fluid" warning now points at the first unread
   declaration, so runners report a file and line.
 
 ### Fixed
+- `mt-4 md:mt-8 @md:mt-12` rendered the `md` value where Tailwind renders the
+  container one: the container value was only a base token, and the
+  viewport token above it won. Wherever a container query sets a value, the
+  element now follows the container.
 - Slash radii (`rounded-[4px/8px]`, and `rounded-[4px_/_8px]` once the
   optimizer strips its spaces) rendered square at every width: the value was
   tokenised, and inside `calc()` the slash divided the two lengths into a
