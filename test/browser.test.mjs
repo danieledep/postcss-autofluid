@@ -31,6 +31,8 @@ const classes = [
   'relative absolute top-0 left-0 md:top-4 mt-0',
   'h1 md:h0', 'h1 md:h2', 'h1 md:h3',
   'rounded-sm md:rounded-2xl', 'rounded-[4px/8px] md:rounded-[16px/32px]', 'rounded-[4px_/_8px]', 'rounded-sm md:rounded-full',
+  'ms-4 md:ms-8', 'text-4xl md:text-6xl', 'leading-6 text-sm md:text-xl', 'space-y-4 md:space-y-8',
+  '@container', 'mt-4 @md:mt-8', 'mt-4 md:mt-8 @md:mt-12',
 ]
 
 // Custom utilities with variants of their own: `md:h0` nests md inside md.
@@ -67,9 +69,18 @@ const html = `
   <div id="r2" class="rounded-[4px/8px] md:rounded-[16px/32px]"></div>
   <div id="r3" class="rounded-[4px_/_8px]"></div>
   <div id="r4" class="rounded-sm md:rounded-full"></div>
+  <div id="s1" class="ms-4 md:ms-8"></div>
+  <p id="lh" class="text-4xl md:text-6xl">x</p>
+  <p id="lh2" class="leading-6 text-sm md:text-xl">x</p>
+  <div class="space-y-4 md:space-y-8"><p id="sp">a</p><p id="spl">b</p></div>
+  <div class="@container" style="width: 50%">
+    <div id="cq1" class="mt-4 @md:mt-8"></div>
+    <div id="cq2" class="mt-4 md:mt-8 @md:mt-12"></div>
+  </div>
+  <div id="cq3" class="mt-4 @md:mt-8"></div>
 `
 
-const PROP = { c: 'paddingLeft', i: 'fontSize', w1: 'width', w2: 'width', l1: 'lineHeight', z1: 'top', n0: 'fontSize', n0l: 'lineHeight', n2: 'fontSize', n3: 'fontSize', r1: 'borderTopLeftRadius', r2: 'borderTopLeftRadius', r3: 'borderTopLeftRadius', r4: 'borderTopLeftRadius' }
+const PROP = { c: 'paddingLeft', i: 'fontSize', w1: 'width', w2: 'width', l1: 'lineHeight', z1: 'top', n0: 'fontSize', n0l: 'lineHeight', n2: 'fontSize', n3: 'fontSize', r1: 'borderTopLeftRadius', r2: 'borderTopLeftRadius', r3: 'borderTopLeftRadius', r4: 'borderTopLeftRadius', s1: 'marginLeft', lh: 'lineHeight', lh2: 'lineHeight', sp: 'marginBottom', spl: 'marginBottom' }
 
 const read = (PROP) =>
   Object.fromEntries(
@@ -101,7 +112,7 @@ for (const optimize of [false, true]) test(`computed styles match Tailwind at br
     for (const width of [320, 1536]) {
       assert.deepEqual(await at(width, fluid), await at(width, plain), `at ${width}px`)
     }
-    const md = ['a', 'b', 'child', 'c', 'd', 'e', 'h', 'w1', 'm1', 'l1', 'n0', 'n0l', 'n3', 'r1', 'r2', 'r3', 'r4']
+    const md = ['a', 'b', 'child', 'c', 'd', 'e', 'h', 'w1', 'm1', 'l1', 'n0', 'n0l', 'n3', 'r1', 'r2', 'r3', 'r4', 's1', 'lh', 'lh2', 'sp', 'spl', 'cq3']
     const pick = (all) => Object.fromEntries(md.map((id) => [id, all[id]]))
     assert.deepEqual(pick(await at(768, fluid)), pick(await at(768, plain)), 'at 768px')
 
@@ -122,6 +133,24 @@ for (const optimize of [false, true]) test(`computed styles match Tailwind at br
       for (const id of ['r2', 'r3', 'r4']) assert.equal(fl[id], pl[id], `${id} at ${width}px`)
     }
     assert.equal(mid.r1, '10px') // rounded-sm 4px at 320px → rounded-2xl 16px at 768px
+    assert.equal(mid.s1, '24px') // logical margins interpolate too
+    assert.equal(mid.sp, '24px') // space-y-4 → md:space-y-8 on the children
+    // text-4xl → md:text-6xl: the ratio glides with the size, 40px → 60px
+    assert.ok(parseFloat(mid.lh) > 40 && parseFloat(mid.lh) < 60, `line-height ${mid.lh}`)
+    assert.equal(mid.lh2, '24px') // leading-6 still wins over the text-* ratio
+
+    // Containers (half the viewport; preflight zeroes the body margin): 16px
+    // below 20rem of container, 32px from @md (28rem = 448px, a 896px
+    // viewport), halfway at 384px (768px). Outside a container, @md: never
+    // applies, as in Tailwind.
+    for (const width of [896, 1100]) {
+      const fl = await at(width, fluid)
+      const pl = await at(width, plain)
+      for (const id of ['cq1', 'cq2', 'cq3']) assert.equal(fl[id], pl[id], `${id} at ${width}px`)
+    }
+    const cmid = await at(768, fluid)
+    assert.equal(cmid.cq1, '24px')
+    assert.equal(cmid.cq3, '16px')
     // A breakpoint nested in the same breakpoint: the inner value wins from md up.
     for (const width of [900, 1100]) {
       const fl = await at(width, fluid)

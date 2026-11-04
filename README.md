@@ -95,16 +95,23 @@ Three fences decide what the plugin touches, so it stays out of everything that 
 
 **Layer.** When the stylesheet has an `@layer utilities` block — every Tailwind v4 build does — only that layer is read. Generated utilities and your own `@utility` blocks live there; `@layer components`, `@layer base` and unlayered hand-written CSS are never touched. Without one (Tailwind v3, whose output is unlayered) every rule is read.
 
-**Property.** Margins, paddings, insets, scroll margins and paddings, gaps, `font-size`, `line-height`, `letter-spacing`, widths and heights with their min and max, `flex-basis`, and border radii.
+**Property.** Margins, paddings, insets, scroll margins and paddings (physical and logical, so `ms-*`, `pe-*`, `start-*` and `space-x-*` / `space-y-*` too), gaps, `font-size`, `line-height`, `letter-spacing`, widths and heights with their min and max, `flex-basis`, and border radii (corners and logical corners such as `rounded-s-*`).
 
-**Value.** Only lengths interpolate. Before deciding, the plugin resolves `var()` through the theme variables Tailwind emits on `:root` (and your own root variables), so `calc(var(--spacing) * 8)` or `var(--text-xl)` is known to be `2rem` or `1.25rem` at build time. Then:
+**Value.** Lengths interpolate, and so do the unitless `line-height` ratios that `text-*` ships, on a family of their own. Before deciding, the plugin resolves `var()` through the theme variables Tailwind emits on `:root` (and your own root variables), so `calc(var(--spacing) * 8)` or `var(--text-xl)` is known to be `2rem` or `1.25rem` at build time. Then:
 
 - interpolated: `px`, `rem`, `em` and the other absolute or font-relative lengths, and `calc()` / `min()` / `max()` / `clamp()` over them — `mt-8`, `text-xl`, `w-96`, `max-w-md`, `mt-[31px]`, `tracking-tight`
-- kept as written: keywords (`auto`, `none`, `fit-content`…), percentages (`w-full`, `w-1/2`, `p-[10%]`), viewport and container units (`w-screen`, `h-dvh`, `mt-[2vw]`), unitless numbers (`leading-none`, the `line-height` ratios `text-*` ships), and variables that can't be resolved at build time (`mt-(--gap)` with `--gap` set somewhere other than the root)
+- interpolated against each other, never against a length: unitless `line-height` values — the ratios `text-*` sets (`text-sm md:text-lg`), `leading-none`, `leading-tight`
+- kept as written: keywords (`auto`, `none`, `fit-content`…), percentages (`w-full`, `w-1/2`, `p-[10%]`), viewport and container units (`w-screen`, `h-dvh`, `mt-[2vw]`), unitless numbers on any other property, and variables that can't be resolved at build time (`mt-(--gap)` with `--gap` set somewhere other than the root)
 
 Percentages and viewport units are valid in `calc()`, but the interpolation runs over the viewport: a curve from `16rem` to `50%` would bend with the parent's width rather than the screen's. Opt them back in with `units` if that is what you want.
 
-A kept value at a breakpoint is a wall. In `w-64 md:w-full lg:w-96` the width stays `16rem` up to `md`, is `100%` from `md` to `lg`, and is `24rem` above — exactly Tailwind — rather than bending towards `24rem` below `md`. The twin publishes a stop token at `md` that the interpolator checks before looking further up.
+A kept value at a breakpoint is a wall, and so is a value of the other kind (a length where ratios interpolate, or the reverse). In `w-64 md:w-full lg:w-96` the width stays `16rem` up to `md`, is `100%` from `md` to `lg`, and is `24rem` above — exactly Tailwind — rather than bending towards `24rem` below `md`. The twin publishes a stop token at `md` that the interpolator checks before looking further up.
+
+### Container queries
+
+Unnamed container variants (`@md:`, `@lg:`) are breakpoints too, on the container's width. `p-2 @md:p-6` interpolates from `p-2` at a container `20rem` wide (`containerMinWidth`, which defaults to `minWidth`) to `p-6` at `28rem`, over `100cqw`. Outside any container `@md:` never applies, as in Tailwind, and the base value holds.
+
+An element follows the container wherever one of its container queries matches, since Tailwind sorts `@` variants after breakpoints and they win. With both kinds on one property (`mt-4 md:mt-8 @md:mt-12`) every value is still right at every breakpoint, but the step into the container value is not interpolated. Named containers (`@md/card:`) and container queries stacked with a breakpoint (`@lg:md:`) stay conditions, as below.
 
 ## Runtime requirements
 
@@ -124,6 +131,7 @@ The output survives esbuild, Lightning CSS and cssnano minification unchanged in
 'postcss-fluid-variants': {
   prefix: 'fl',          // token and function names: --fl, --fl-<prop>, --fl-<prop>-<bp>
   minWidth: '20rem',     // viewport where the base (unprefixed) value sits
+  containerMinWidth: …,  // container width where the base value sits for @md: and friends; defaults to minWidth
   properties: [...],     // which properties to make fluid (see index.js for defaults)
   layers: 'auto',        // 'auto': utilities if present, else all; null: all; or a list of layer names
   units: [...],          // units that interpolate; default: px, rem, em and other absolute lengths
@@ -149,18 +157,20 @@ Measured on four public Tailwind codebases, built with Tailwind 4.3 and minified
 | tailwindcss.com | 4544 | 1163 | 448 → 546 kB (+22%) | 44 → 52 kB (+17%) |
 | shadcn/ui monorepo | 2488 | 1129 | 280 → 371 kB (+33%) | 34 → 41 kB (+22%) |
 
-Twins compress well because they repeat selectors and values already in the file. Expect roughly a fifth on top of your CSS over the wire. These numbers predate the length-only fence (0.4), which skips percentage, viewport and ratio values, so current builds should come in at or below them.
+Twins compress well because they repeat selectors and values already in the file. Expect roughly a fifth on top of your CSS over the wire. These numbers predate the length-only fence (0.4), which skips percentage and viewport values, and the newer support for logical properties, `space-*`, ratios and container queries, which adds twins for those utilities. On a synthetic build of common utilities the newer support costs about 1% more over the wire when none of them is used responsively, and grows with the number of responsive `space-*`, logical and `@` utilities.
 
 ## What is and isn't picked up
 
 Every rule that has the specificity of one class — a single class selector, optionally wrapped in `:where()` the way class-based `dark:` is — and sits in at-rules only. So:
 
 - `mt-6`, `md:mt-8`, `xl:text-lg`, `2xl:mt-11`, `min-[900px]:mt-8` — yes, these are the tokens
-- `dark:mt-10`, `max-md:mt-2`, `print:mt-0`, `@md:mt-8` (container), `supports-[…]:mt-4` — yes: the value becomes the *base* token, under that condition
+- `@md:mt-8`, `@lg:p-6` — yes: container breakpoints, interpolated over the container (see above)
+- `space-y-4 md:space-y-8`, `space-x-*` — yes: the twins target the same children, at the same zero specificity
+- `dark:mt-10`, `max-md:mt-2`, `print:mt-0`, `@md/card:mt-8` (named container), `supports-[…]:mt-4` — yes: the value becomes the *base* token, under that condition
 - `dark:md:mt-4`, `md:max-lg:mt-8` — yes: the `md` token, under the remaining condition
 - `hover:mt-8`, `group-hover:mt-8`, `first:mt-0`, `[&_p]:mt-4` — left alone; their extra specificity keeps beating the twins, exactly as in Tailwind
 - `md:mt-auto`, `max-w-none`, `w-fit`, `md:w-full`, `md:leading-none` — not lengths; the twin re-asserts the value so it keeps winning, and stops the interpolation below it
-- `padding: 0 20px`, `margin: 1px 2px 3px 4px`, `gap: 8px 12px`, `inset: 1px 2px` — split into their longhands first, so each component interpolates on its own
+- `padding: 0 20px`, `margin: 1px 2px 3px 4px`, `gap: 8px 12px`, `inset: 1px 2px`, `margin-inline: 4px 8px` — split into their longhands first, so each component interpolates on its own
 - `border-radius: 1px 2px`, `rounded-[4px/8px]` — left alone; its values map to corners and the elliptical `/` form does not split
 - `md:rounded-full` — not a size: `calc(infinity * 1px)`, or `2147483647px` once optimized, is kept as written and stops the interpolation like a keyword
 - `mt-6!` — left alone; `!important` opts a declaration out
@@ -172,11 +182,11 @@ If a stylesheet has responsive values for fluid properties and none of them can 
 
 In other words a non-breakpoint variant answers "what is the value at this breakpoint under this condition", and the interpolation runs through it. This matches Tailwind wherever Tailwind's own variant order puts the condition before the breakpoints (all built-in media variants). For a custom variant Tailwind orders *after* the breakpoints, such as class-based `dark`, `mt-6 dark:mt-10 md:mt-8` is "dark base is 40, md is 32" here, where plain Tailwind would let `dark:` win at every width. Stack them (`dark:md:mt-8`) to say what you mean.
 
-### `line-height` ratios step
+### `line-height` ratios and lengths
 
-Tailwind's `text-*` utilities set `line-height` to a ratio (`text-lg` → `calc(1.75 / 1.125)`). Ratios are kept as written, so in `text-sm md:text-lg` the font size interpolates but the ratio steps at `md`, exactly as in Tailwind. Since the ratio multiplies an already-fluid font size, the jump is small — about 2px at `md` here. For a fully smooth line height, give both ends a length: `text-sm/6 md:text-lg/8`, or `leading-6 md:leading-8`.
+Tailwind's `text-*` utilities set `line-height` to a ratio (`text-lg` → `calc(1.75 / 1.125)`). Ratios interpolate with ratios, so in `text-sm md:text-lg` the ratio glides along with the font size instead of jumping at `md`.
 
-Mixing kinds is safe: `leading-6 md:leading-none` holds `1.5rem` below `md` and is `1` from there on, as in Tailwind.
+A ratio never meets a length. In `text-sm/6 md:text-lg`, `1.5rem` holds up to `md` and the ratio takes over from there, as in Tailwind; `leading-6 md:leading-none` holds `1.5rem` below `md` and is `1` from there on. `leading-*` keeps winning over `text-*` the way it does in Tailwind, through `--tw-leading`.
 
 ## Testing
 

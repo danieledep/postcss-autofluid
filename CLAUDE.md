@@ -62,19 +62,38 @@ assembles whatever co-occurs on an element.
   has one; that is the fence that keeps authored CSS in `components`, `base`
   and unlayered sheets out. Without it (v3) every rule is read. `null` reads
   everything; a list narrows explicitly.
-- Only lengths interpolate. `interpolable()` resolves `var()` through root
-  custom properties (Tailwind emits used theme variables on `:root, :host`)
-  and accepts arithmetic over the `units` set (absolute and font-relative
-  lengths by default) with at least one length. Keywords, `%`, viewport and
-  container units, unitless numbers and unresolvable variables are *fixed*:
-  re-asserted verbatim, never tokenised. `%` was excluded deliberately — the
-  curve runs over the viewport, a percentage tracks the parent.
+- Only lengths interpolate, plus unitless numbers on `NUMBER_PROPS`
+  (`line-height`). `interpolable()` resolves `var()` through root custom
+  properties (Tailwind emits used theme variables on `:root, :host`) and the
+  rule's own custom properties (`space-y-*` sets `--tw-space-y-reverse`), and
+  accepts arithmetic over the `units` set (absolute and font-relative lengths
+  by default) with at least one length. Keywords, `%`, viewport and
+  container units, other unitless numbers and unresolvable variables are
+  *fixed*: re-asserted verbatim, never tokenised. `%` was excluded
+  deliberately — the curve runs over the viewport, a percentage tracks the
+  parent.
+- Tokens belong to a *channel*: the property itself for lengths,
+  `<prop>-num` for numbers. Each channel has its own tokens and wrapper; a
+  value of another channel (or a fixed one) at a breakpoint publishes a stop
+  for every other channel of the property. Number tokens stay verbatim
+  (`var(--tw-leading, …)`), so `leading-*` keeps winning over `text-*` at
+  runtime exactly as in Tailwind.
+- Container breakpoints are a second axis, keyed `c<width>`. The interpolator
+  gets `@container` bands (`--clo`, `--chi`, …) next to the `@media` ones,
+  with an outer default that holds the base when there is no container, and
+  picks the axis per element: `--cq` (a non-inherited flag set under a
+  matching container query), else viewport tokens, else container tokens.
+  Without container breakpoints the output has none of this.
 - A fixed value at a breakpoint is a wall. It publishes `--fl-<prop>-<bp>-stop`
   (same conditions as a value token), and the interpolator's `--hi` checks
   `style(--s<bp>)` before `style(--v<bp>)` at each breakpoint above the band.
   Only boolean-form `style()` is used, the form verified below. A fixed base
   value needs no stop. Bands with no stop above them keep the plain `var()`
   chain, so output without walls is byte-identical to before.
+- `UTILITY` also accepts `:where(.cls > :not(:last-child))`, the child
+  selector `space-x-*` and `space-y-*` use. It is zero-specificity like
+  class-based `dark:`, and the twin mirrors it exactly. No other child
+  selector is read.
 - The interpolator works on one value, so a multi-value shorthand is split into
   its longhands before anything else runs. A list with no known decomposition
   (`border-radius`) keeps its literal value. Any property in the set twins every
@@ -129,6 +148,9 @@ computed styles against plain Tailwind at a dozen widths:
   one "part" and passed the length fence; as a token, `calc(4px/8px + …)` is a
   number and every corner went to 0. The optimizer strips the spaces from
   `4px / 8px` too. A top-level `/` now makes a value fixed.
+- `mt-4 md:mt-8 @md:mt-12` showed the `md` value inside a matching
+  container: the container value was a base token under its query, and the
+  viewport token above it won. Hence the `--cq` flag.
 - The optimizer folds `rounded-full`'s `calc(infinity * 1px)` into
   `2147483647px`, which then interpolated: `rounded-sm md:rounded-full` was a
   pill a few pixels above the base in production only. Lengths of `1e6` units
@@ -147,14 +169,17 @@ computed styles against plain Tailwind at a dozen widths:
    in with no ordering work; but `css.transformer: 'lightningcss'` bypasses
    PostCSS entirely. Vite also warns about any node without a `source`, so
    every generated node carries one (twins point at their originals).
+7. Verified in Chromium 153: `@container` rules are honoured inside a
+   `@function` body and query the calling element's container; `100cqw`
+   resolves there; `if()` accepts `style(--a) or style(--b)`; a unitless
+   number interpolates through the same `calc()` as a length. esbuild,
+   Lightning CSS and cssnano keep this output intact too.
 
 ## Known trade-off
 
-`line-height` ratios are fixed, so they step at breakpoints like plain
-Tailwind instead of interpolating ratio↔ratio (`text-sm md:text-lg`). The old
-limitation — a ratio meeting a length made the property invalid and inherit —
-is gone: kinds never meet now. A possible refinement is a second token family
-per kind (numbers interpolate with numbers, each a wall for the other).
+An element with both viewport and container tokens for one property is right
+at every breakpoint, but steps into the container value instead of bending
+towards it: the two curves run over different widths.
 
 ## Semantics worth knowing
 
@@ -165,8 +190,8 @@ plain Tailwind lets the variant win at all widths. Documented; not a bug.
 
 ## Possible next steps
 
-- Container-query breakpoints (`@md:`) currently act as conditions on the base
-  token. A second interpolator over `100cqw` would make them fluid too.
+- Named containers (`@md/card:`) are still conditions: `cqw` always measures
+  the nearest container, which need not be the named one.
 - A Vite/Lightning CSS pass after this plugin must not strip `@function`; the
   three common minifiers were checked, others were not.
 
