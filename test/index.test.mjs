@@ -352,19 +352,68 @@ test('interpolates every length, percentages and viewport units included, and no
   assert.doesNotMatch(out, /--fl-width-0: (fit-content|var\(--x\))/)
 })
 
-test('keeps percentages fixed where an unresolvable one turns the value into auto', async () => {
-  const css = `.h-12 { height: 3rem } .top-4 { top: 1rem } .min-h-12 { min-height: 3rem }
+test('interpolates percentage heights and offsets too', async () => {
+  const css = `.h-12 { height: 3rem } .top-4 { top: 1rem }
+    @media (width >= 48rem) { .md\\:h-1\\/2 { height: 50% } .md\\:top-1\\/2 { top: 50% } }`
+  const out = flat(await appendix(css))
+  assert.match(out, /\.md\\:h-1\\\/2 \{ --fl-height-48rem: 50%; \}/)
+  assert.match(out, /\.md\\:top-1\\\/2 \{ --fl-top-48rem: 50%; \}/)
+})
+
+test('splits border widths into their sides and axes', async () => {
+  const css = `.border-2 { border-width: 2px } .border-\\[1px_2px\\] { border-width: 1px 2px } .border-x-2 { border-inline-width: 2px 4px }
+    @media (width >= 48rem) { .md\\:border-8 { border-width: 8px } .md\\:border-y-4 { border-block-width: 4px } .md\\:border-s-4 { border-inline-start-width: 4px } }`
+  const out = flat(await appendix(css))
+  assert.match(out, /\.border-2 \{ --fl-border-width-0: 2px; border-width: --fl-border-width\(\); \}/)
+  // only the longhands with a responsive value anywhere get tokens
+  assert.match(out, /\.border-\\\[1px_2px\\\] \{ --fl-border-block-width-0: 1px; border-block-width: --fl-border-block-width\(\); \}/)
+  assert.match(out, /\.border-x-2 \{ --fl-border-inline-start-width-0: 2px; border-inline-start-width: --fl-border-inline-start-width\(\); \}/)
+  assert.match(out, /\.md\\:border-y-4 \{ --fl-border-block-width-48rem: 4px; \}/)
+})
+
+test('interpolates Tailwind transform variables, rotate angles and opacity', async () => {
+  const css = themed(`@layer utilities {
+    .translate-x-4 { --tw-translate-x: calc(var(--spacing) * 4); translate: var(--tw-translate-x) var(--tw-translate-y) }
+    .scale-100 { --tw-scale-x: 100%; --tw-scale-y: 100%; --tw-scale-z: 100%; scale: var(--tw-scale-x) var(--tw-scale-y) }
+    .-scale-y-110 { --tw-scale-y: calc(110% * -1); scale: var(--tw-scale-x) var(--tw-scale-y) }
+    .rotate-0 { rotate: 0 } .opacity-50 { opacity: 50% } .opacity-0 { opacity: 0 }
+    .rotate-x-12 { --tw-rotate-x: rotateX(12deg) }
     @media (width >= 48rem) {
-      .md\\:h-1\\/2 { height: 50% } .md\\:h-\\[50vh\\] { height: 50vh }
-      .md\\:top-1\\/2 { top: 50% } .md\\:min-h-full { min-height: 100% }
+      .md\\:translate-x-1\\/2 { --tw-translate-x: calc(1 / 2 * 100%); translate: var(--tw-translate-x) var(--tw-translate-y) }
+      .md\\:scale-150 { --tw-scale-x: 150%; --tw-scale-y: 150%; --tw-scale-z: 150%; scale: var(--tw-scale-x) var(--tw-scale-y) }
+      .md\\:rotate-45 { rotate: 45deg } .md\\:opacity-100 { opacity: 1 } .md\\:rotate-x-45 { --tw-rotate-x: rotateX(45deg) }
+    }
+  }`)
+  const out = flat(await appendix(css))
+  // the variable is the property; its tokens drop the leading dashes
+  assert.match(out, /\.translate-x-4 \{ --fl-tw-translate-x-0: calc\(var\(--spacing\) \* 4\); --tw-translate-x: --fl-tw-translate-x\(\); \}/)
+  assert.match(out, /@function --fl-tw-translate-x\(\) \{ result: --fl\(var\(--fl-tw-translate-x-0\), var\(--fl-tw-translate-x-48rem\)\); \}/)
+  assert.match(out, /\.md\\:translate-x-1\\\/2 \{ --fl-tw-translate-x-48rem: calc\(1 \/ 2 \* 100%\); \}/)
+  // a ratio's percentage is published as its number
+  assert.match(out, /\.scale-100 \{ --fl-tw-scale-x-0: 1; --fl-tw-scale-y-0: 1; --fl-tw-scale-z-0: 1; --tw-scale-x: --fl-tw-scale-x\(\);/)
+  assert.match(out, /\.-scale-y-110 \{ --fl-tw-scale-y-0: calc\(1\.1 \* -1\);/)
+  assert.match(out, /\.md\\:scale-150 \{ --fl-tw-scale-x-48rem: 1\.5;/)
+  assert.match(out, /\.opacity-50 \{ --fl-opacity-0: 0\.5;/)
+  assert.match(out, /\.opacity-0 \{ --fl-opacity-0: 0;/)
+  assert.match(out, /\.md\\:opacity-100 \{ --fl-opacity-48rem: 1; \}/)
+  // an angle's zero is 0deg; transform functions are not values
+  assert.match(out, /\.rotate-0 \{ --fl-rotate-0: 0deg;/)
+  assert.match(out, /\.md\\:rotate-45 \{ --fl-rotate-48rem: 45deg; \}/)
+  assert.doesNotMatch(out, /--fl-tw-rotate-x/)
+  // the composed `translate` / `scale` declarations are left to Tailwind
+  assert.doesNotMatch(out, /--fl-translate|--fl-scale-/)
+})
+
+test('reads Tailwind 3 transforms, which compose every axis in transform', async () => {
+  const css = `.rotate-0 { --tw-rotate: 0deg; transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) }
+    .scale-100 { --tw-scale-x: 1; --tw-scale-y: 1; transform: translate(var(--tw-translate-x), var(--tw-translate-y)) scale(var(--tw-scale-x), var(--tw-scale-y)) }
+    @media (min-width: 768px) {
+      .md\\:rotate-45 { --tw-rotate: 45deg; transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) }
+      .md\\:scale-150 { --tw-scale-x: 1.5; --tw-scale-y: 1.5; transform: translate(var(--tw-translate-x), var(--tw-translate-y)) scale(var(--tw-scale-x), var(--tw-scale-y)) }
     }`
   const out = flat(await appendix(css))
-  assert.match(out, /\.md\\:h-1\\\/2 \{ --fl-height-48rem-stop: 1; \}/)
-  assert.match(out, /\.md\\:h-\\\[50vh\\\] \{ --fl-height-48rem: 50vh;/)
-  // top's only responsive value is fixed, so top is left alone
-  assert.doesNotMatch(out, /--fl-top/)
-  // min-height resolves such a percentage to 0, so it may interpolate
-  assert.match(out, /\.md\\:min-h-full \{ --fl-min-height-48rem: 100%;/)
+  assert.match(out, /\.rotate-0 \{ --fl-tw-rotate-0: 0deg; --tw-rotate: --fl-tw-rotate\(\); \}/)
+  assert.match(out, /\.md\\:scale-150 \{ --fl-tw-scale-x-768px: 1\.5;/)
 })
 
 test('interpolates line-height ratios on a family of their own, walled off from lengths', async () => {

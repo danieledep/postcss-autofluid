@@ -33,6 +33,15 @@ const DEFAULT_PROPERTIES = [
   'width', 'min-width', 'max-width',
   'height', 'min-height', 'max-height',
   'flex-basis',
+  'border-width', ...expand('border').map((p) => `${p}-width`).slice(1),
+  ...logical('border').map((p) => `${p}-width`),
+  'outline-width', 'outline-offset',
+  // Tailwind 4 and 3 set translate and scale through these, one axis each,
+  // and compose them in `translate` / `scale` / `transform` at runtime.
+  '--tw-translate-x', '--tw-translate-y', '--tw-translate-z',
+  '--tw-scale-x', '--tw-scale-y', '--tw-scale-z',
+  '--tw-rotate', // Tailwind 3; 4 writes `rotate` directly
+  'scale', 'rotate', 'opacity',
   'border-radius',
   'border-top-left-radius', 'border-top-right-radius',
   'border-bottom-right-radius', 'border-bottom-left-radius',
@@ -66,20 +75,6 @@ const LENGTH_UNITS = new Set([
   '%',
   ...['', 's', 'l', 'd'].flatMap((p) => ['vw', 'vh', 'vi', 'vb', 'vmin', 'vmax'].map((u) => p + u)),
   'cqw', 'cqh', 'cqi', 'cqb', 'cqmin', 'cqmax',
-])
-
-/**
- * Properties where a percentage that cannot be resolved (an auto-height
- * parent, an indefinite flex container, a relatively positioned box) turns
- * the whole value into `auto`, sum and all. `calc(3rem + (50% - 3rem) * 0)`
- * is then not 3rem but auto, so `h-12 md:h-1/2` would lose `h-12` below `md`
- * in exactly the layouts where plain Tailwind keeps it. Measured in Chromium:
- * `min-height` and `row-gap` resolve such a percentage to 0 and are safe.
- * Percentages stay fixed on these; every other length still interpolates.
- */
-const PERCENT_AUTO = new Set([
-  'height', 'max-height', 'block-size', 'max-block-size', 'flex-basis',
-  'inset', 'top', 'bottom', 'inset-block', 'inset-block-start', 'inset-block-end',
 ])
 
 /**
@@ -175,6 +170,12 @@ const SHORTHANDS = {
   margin: edges('margin'),
   inset: edges('inset'),
   gap: { 2: ['row-gap', 'column-gap'] },
+  'border-width': {
+    2: ['border-block-width', 'border-inline-width'],
+    3: ['border-top-width', 'border-inline-width', 'border-bottom-width'],
+    4: ['border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width'],
+  },
+  ...Object.fromEntries(['inline', 'block'].map((axis) => [`border-${axis}-width`, { 2: [`border-${axis}-start-width`, `border-${axis}-end-width`] }])),
   // `margin-inline: 1px 2px` is its start, then its end
   ...Object.fromEntries(
     ['margin', 'padding', 'scroll-margin', 'scroll-padding', 'inset']
@@ -260,21 +261,20 @@ function resolve(value, theme, seen = new Set()) {
  * one length, any number of plain multipliers, nothing else. Keywords, ratios
  * (`line-height: 1.5`), a top-level `/` (`4px/8px`), lengths
  * standing in for infinity and anything unresolvable are not; they keep their
- * literal value and stop the interpolation at their breakpoint. `percent` is
- * false on the `PERCENT_AUTO` properties.
+ * literal value and stop the interpolation at their breakpoint. `units`
+ * narrows the units for properties that do not take lengths (`rotate`).
  */
-function interpolable(value, theme, percent = true) {
+function interpolable(value, theme, units = LENGTH_UNITS) {
   if (KEYWORD.test(value)) return false
   const resolved = resolve(value, theme)
   if (resolved == null || slashed(resolved)) return false
-  if (ZERO.test(resolved)) return true // a bare zero is a length
+  if (ZERO.test(resolved)) return true // a bare zero is a length, or an angle
   let lengths = 0
   const rest = resolved
     .replace(MATH, '(')
     .replace(/[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?([a-z%]*)/gi, (number, unit) => {
       if (!unit) return ' '
-      const u = unit.toLowerCase()
-      if ((u === '%' ? percent : LENGTH_UNITS.has(u)) && Math.abs(parseFloat(number)) < HUGE) { lengths++; return ' ' }
+      if (units.has(unit.toLowerCase()) && Math.abs(parseFloat(number)) < HUGE) { lengths++; return ' ' }
       return '\0'
     })
   return lengths > 0 && /^[\s()+\-*/,]*$/.test(rest)
@@ -288,6 +288,26 @@ function interpolable(value, theme, percent = true) {
  * is a wall for the other, exactly like a keyword.
  */
 const NUMBER_PROPS = new Set(['line-height'])
+
+/**
+ * Properties whose value is a ratio: a number, or a percentage of one.
+ * Tailwind writes `opacity: 50%` and `--tw-scale-x: 150%`, and its optimizer
+ * rewrites the first to `.5`, so both forms share one token family and a
+ * percentage is published as the number it stands for. A length never
+ * applies here, so a bare zero stays a number.
+ */
+const RATIO_PROPS = new Set(['opacity', 'scale', '--tw-scale-x', '--tw-scale-y', '--tw-scale-z'])
+const PERCENT = new Set(['%'])
+
+/** Properties that take an angle. Their bare zero is published as `0deg`. */
+const ANGLE_PROPS = new Set(['rotate', '--tw-rotate'])
+const ANGLE_UNITS = new Set(['deg', 'grad', 'rad', 'turn'])
+
+/** A ratio token: each percentage in the value as the number it stands for. */
+function ratio(value, theme) {
+  const resolved = value.includes('%') || !value.includes('var(') ? value : resolve(value, theme)
+  return resolved.replace(/([+-]?(?:\d+\.?\d*|\.\d+))%/g, (_, n) => String(+(parseFloat(n) / 100).toFixed(8)))
+}
 
 /** Is this value plain arithmetic over unitless numbers, once resolved? */
 function numeric(value, theme) {
@@ -391,12 +411,15 @@ function fluidVariants(options = {}) {
 
   const fluidable = new Set(properties)
   const fn = `--${prefix}`
-  const token = (prop, key) => `--${prefix}-${prop}-${key}`
+  // `--tw-scale-x` names its tokens `--fl-tw-scale-x-*`.
+  const slug = (name) => name.replace(/^-+/, '')
+  const token = (prop, key) => `--${prefix}-${slug(prop)}-${key}`
+  const wrapper = (channel) => `${fn}-${slug(channel)}`
   // A fixed value at a breakpoint publishes this instead of a value token.
-  const stop = (prop, key) => `--${prefix}-${prop}-${key}-stop`
+  const stop = (prop, key) => `--${prefix}-${slug(prop)}-${key}-stop`
   // Set under a container query that sets a value for the property: the
   // container decides, as Tailwind's later-sorted `@` variants do.
-  const inContainer = (prop) => `--${prefix}-${prop}-cq`
+  const inContainer = (prop) => `--${prefix}-${slug(prop)}-cq`
   const param = (key) => `--v${key}`
   const stopParam = (key) => `--s${key}`
 
@@ -447,12 +470,12 @@ function fluidVariants(options = {}) {
       // Which token family a value joins: the property's own for lengths,
       // `<prop>-num` for unitless numbers where those are valid, none (fixed)
       // for everything else.
-      const channelOf = (prop, value, vars) =>
-        interpolable(value, vars, !PERCENT_AUTO.has(prop))
-          ? prop
-          : NUMBER_PROPS.has(prop) && numeric(value, vars)
-            ? `${prop}-num`
-            : null
+      const channelOf = (prop, value, vars) => {
+        if (RATIO_PROPS.has(prop)) return numeric(value, vars) || interpolable(value, vars, PERCENT) ? prop : null
+        if (ANGLE_PROPS.has(prop)) return interpolable(value, vars, ANGLE_UNITS) ? prop : null
+        if (interpolable(value, vars)) return prop
+        return NUMBER_PROPS.has(prop) && numeric(value, vars) ? `${prop}-num` : null
+      }
 
       // Declarations that share a selector and an at-rule chain become one
       // twin. `walkDecls` is document order and a Map keeps insertion order,
@@ -474,8 +497,8 @@ function fluidVariants(options = {}) {
         // A list the interpolator cannot take is kept as written, not tokenised.
         const split = components(prop, value.trim())
         const kept = !split || split.some(([name]) => !fluidable.has(name))
-          ? [{ prop, value, source, channel: null }]
-          : split.map(([name, part]) => ({ prop: name, value: part, source, channel: channelOf(name, part, vars) }))
+          ? [{ prop, value, source, vars, channel: null }]
+          : split.map(([name, part]) => ({ prop: name, value: part, source, vars, channel: channelOf(name, part, vars) }))
 
         for (const selector of rule.selectors) {
           if (!UTILITY.test(selector)) continue
@@ -653,7 +676,7 @@ function fluidVariants(options = {}) {
       const wrappers = [...channels.keys()].map((channel) =>
         new AtRule({
           name: 'function',
-          params: `${fn}-${channel}()`,
+          params: `${wrapper(channel)}()`,
           nodes: [
             decl(
               'result',
@@ -696,7 +719,7 @@ function fluidVariants(options = {}) {
       // tokens for the same selector: the new rule has to land after it, or
       // the earlier value would win (a nested `@variant` under a condition).
       const isTokenOnly = (node) =>
-        node.type === 'rule' && node.every((child) => child.prop?.startsWith('--'))
+        node.type === 'rule' && node.every((child) => child.prop?.startsWith(`--${prefix}-`))
       const competes = (node, rule) =>
         rule && node.selector === rule.selector && node.some((d) => rule.some((n) => n.prop === d.prop))
 
@@ -719,17 +742,21 @@ function fluidVariants(options = {}) {
       for (const { selector, source, width, ancestors, conditions, decls } of found) {
         const tokens = []
         const values = []
-        for (const { prop, value, channel, source } of decls) {
+        for (const { prop, value, channel, source, vars } of decls) {
           const own = channelsOf.get(prop)
           if (!own) continue
           if (width !== BASE) {
             for (const other of own) if (other !== channel) tokens.push(decl(stop(other, width.key), '1', source))
           }
           if (own.includes(channel)) {
-            const published = channel === prop && ZERO.test(value) ? '0px' : value
+            const published = RATIO_PROPS.has(prop)
+              ? ratio(value, vars)
+              : channel === prop && ZERO.test(value)
+                ? ANGLE_PROPS.has(prop) ? '0deg' : '0px'
+                : value
             tokens.push(decl(token(channel, width.key), published, source))
             if (width.axis === 'cq') values.push(decl(inContainer(channel), '1', source))
-            values.push(decl(prop, `${fn}-${channel}()`, source))
+            values.push(decl(prop, `${wrapper(channel)}()`, source))
           } else {
             values.push(decl(prop, value, source))
           }

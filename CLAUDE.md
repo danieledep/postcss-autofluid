@@ -72,11 +72,24 @@ assembles whatever co-occurs on an element.
   unitless numbers and unresolvable variables are *fixed*: re-asserted
   verbatim, never tokenised. There is no `units` option; it was removed in
   favour of interpolating everything `calc()` can mix.
-- `%` stays fixed on `PERCENT_AUTO` (`height`, `max-height`, `flex-basis`,
-  `top`, `bottom`, `inset`, block-axis forms). There an unresolvable
-  percentage (auto-height parent, relative box) turns the *whole* `calc()`
-  into auto, so `h-12 md:h-1/2` lost `h-12` below md. `min-height` and
-  `row-gap` resolve it to 0 instead and are safe (measured in Chromium).
+- Percentages interpolate everywhere, heights included. Known cost: in an
+  auto-height parent a percentage height (or `top`, `flex-basis`) can't
+  resolve and the whole `calc()` becomes auto, so `h-12 md:h-1/2` there is
+  auto below md where Tailwind keeps 3rem. Dan chose this over keeping `%`
+  fixed on those properties; it is documented in the README.
+- Three more value kinds, by property: `RATIO_PROPS` (`opacity`, `scale`,
+  `--tw-scale-*`) take numbers and `%` on one channel, with each `N%`
+  published as `N/100` (the optimizer turns `opacity: 50%` into `.5`);
+  `ANGLE_PROPS` (`rotate`, v3's `--tw-rotate`) take angles, zero as `0deg`.
+- Tailwind composes translate and scale at runtime from per-axis variables
+  (`translate: var(--tw-translate-x) var(--tw-translate-y)`), so those
+  variables *are* the fluid properties: the twin sets
+  `--tw-scale-x: --fl-tw-scale-x()` and Tailwind's own `scale:` declaration
+  picks it up. Verified in Chromium: a custom function in a `syntax: "*"`
+  variable evaluates on the element. Names drop the leading dashes
+  (`slug()`). `isTokenOnly` therefore checks the `--<prefix>-` prefix, not
+  `--`, or a `--tw-*` value twin would count as inert and be skipped past.
+  Transform functions (`--tw-rotate-x: rotateX(12deg)`) stay fixed.
 - Tokens belong to a *channel*: the property itself for lengths,
   `<prop>-num` for numbers. Each channel has its own tokens and wrapper; a
   value of another channel (or a fixed one) at a breakpoint publishes a stop

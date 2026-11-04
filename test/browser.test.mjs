@@ -34,6 +34,9 @@ const classes = [
   'ms-4 md:ms-8', 'text-4xl md:text-6xl', 'leading-6 text-sm md:text-xl', 'space-y-4 md:space-y-8',
   '@container', 'mt-4 @md:mt-8', 'mt-4 md:mt-8 @md:mt-12',
   'w-12 md:w-1/2', 'w-[20vw] md:w-[50vw]', 'h-12 md:h-1/2', 'h-12 md:h-[50vh]', 'relative top-4 md:top-1/2',
+  'border-2 md:border-8', 'border-x-2 md:border-x-8', 'divide-x-2 md:divide-x-8', 'outline-2 md:outline-8', 'outline-offset-2 md:outline-offset-8',
+  'translate-x-4 md:translate-x-12', 'h-10 -translate-y-2 md:translate-y-1/2', 'scale-100 md:scale-150', 'scale-x-50 md:scale-x-150',
+  'scale-[1.2] md:scale-[1.6]', 'rotate-0 md:rotate-90', '-rotate-12 md:rotate-45', 'opacity-20 md:opacity-100', 'opacity-[.2] md:opacity-80',
 ]
 
 // Custom utilities with variants of their own: `md:h0` nests md inside md.
@@ -59,10 +62,26 @@ const html = `
     <div id="w2" class="w-full md:w-64 lg:w-96"></div>
     <div id="u1" class="w-12 md:w-1/2"></div>
     <div id="u2" class="w-[20vw] md:w-[50vw]"></div>
-    <div id="u3" class="h-12 md:h-1/2"></div>
     <div id="u4" class="h-12 md:h-[50vh]"></div>
+  </div>
+  <div style="height: 400px">
+    <div id="u3" class="h-12 md:h-1/2"></div>
     <div id="u5" class="relative top-4 md:top-1/2"></div>
   </div>
+  <div id="b1" class="border-2 md:border-8"></div>
+  <div id="b2" class="border-x-2 md:border-x-8"></div>
+  <div class="flex divide-x-2 md:divide-x-8"><p id="dv">a</p><p>b</p></div>
+  <div id="o1" class="outline-2 md:outline-8"></div>
+  <div id="o2" class="outline-offset-2 md:outline-offset-8"></div>
+  <div id="t1" class="translate-x-4 md:translate-x-12"></div>
+  <div id="t2" class="h-10 -translate-y-2 md:translate-y-1/2"></div>
+  <div id="k1" class="scale-100 md:scale-150"></div>
+  <div id="k2" class="scale-x-50 md:scale-x-150"></div>
+  <div id="k3" class="scale-[1.2] md:scale-[1.6]"></div>
+  <div id="q1" class="rotate-0 md:rotate-90"></div>
+  <div id="q2" class="-rotate-12 md:rotate-45"></div>
+  <div id="op1" class="opacity-20 md:opacity-100"></div>
+  <div id="op2" class="opacity-[.2] md:opacity-80"></div>
   <div id="m1" class="mt-6 md:mt-auto lg:mt-12"></div>
   <p id="l1" class="leading-6 md:leading-none"></p>
   <div class="relative" style="padding: 40px"><span id="z1" class="absolute top-0 left-0"></span></div>
@@ -86,12 +105,14 @@ const html = `
   <div id="cq3" class="mt-4 @md:mt-8"></div>
 `
 
-const PROP = { c: 'paddingLeft', i: 'fontSize', w1: 'width', w2: 'width', u1: 'width', u2: 'width', u3: 'height', u4: 'height', u5: 'top', l1: 'lineHeight', z1: 'top', n0: 'fontSize', n0l: 'lineHeight', n2: 'fontSize', n3: 'fontSize', r1: 'borderTopLeftRadius', r2: 'borderTopLeftRadius', r3: 'borderTopLeftRadius', r4: 'borderTopLeftRadius', s1: 'marginLeft', lh: 'lineHeight', lh2: 'lineHeight', sp: 'marginBottom', spl: 'marginBottom' }
+const PROP = { c: 'paddingLeft', i: 'fontSize', w1: 'width', w2: 'width', u1: 'width', u2: 'width', u3: 'height', u4: 'height', u5: 'top', b1: 'borderTopWidth', b2: 'borderLeftWidth', dv: 'borderRightWidth', o1: 'outlineWidth', o2: 'outlineOffset', t1: 'translate', t2: 'ty', k1: 'scale', k2: 'scale', k3: 'scale', q1: 'rotate', q2: 'rotate', op1: 'opacity', op2: 'opacity', l1: 'lineHeight', z1: 'top', n0: 'fontSize', n0l: 'lineHeight', n2: 'fontSize', n3: 'fontSize', r1: 'borderTopLeftRadius', r2: 'borderTopLeftRadius', r3: 'borderTopLeftRadius', r4: 'borderTopLeftRadius', s1: 'marginLeft', lh: 'lineHeight', lh2: 'lineHeight', sp: 'marginBottom', spl: 'marginBottom' }
 
 const read = (PROP) =>
   Object.fromEntries(
     [...document.querySelectorAll('[id]')].map((el) => {
       const cs = getComputedStyle(el)
+      // A percentage stays in the computed translate, so read where it lands.
+      if (PROP[el.id] === 'ty') return [el.id, `${Math.round((el.getBoundingClientRect().top - el.offsetTop) * 100) / 100}px`]
       return [el.id, cs[PROP[el.id] ?? 'marginTop']]
     }),
   )
@@ -118,7 +139,7 @@ for (const optimize of [false, true]) test(`computed styles match Tailwind at br
     for (const width of [320, 1536]) {
       assert.deepEqual(await at(width, fluid), await at(width, plain), `at ${width}px`)
     }
-    const md = ['a', 'b', 'child', 'c', 'd', 'e', 'h', 'w1', 'u1', 'u2', 'u3', 'u4', 'u5', 'm1', 'l1', 'n0', 'n0l', 'n3', 'r1', 'r2', 'r3', 'r4', 's1', 'lh', 'lh2', 'sp', 'spl', 'cq3']
+    const md = ['a', 'b', 'child', 'c', 'd', 'e', 'h', 'w1', 'u1', 'u2', 'u3', 'u4', 'u5', 'b1', 'b2', 'dv', 'o1', 'o2', 't1', 't2', 'k1', 'k2', 'k3', 'q1', 'q2', 'op1', 'op2', 'm1', 'l1', 'n0', 'n0l', 'n3', 'r1', 'r2', 'r3', 'r4', 's1', 'lh', 'lh2', 'sp', 'spl', 'cq3']
     const pick = (all) => Object.fromEntries(md.map((id) => [id, all[id]]))
     assert.deepEqual(pick(await at(768, fluid)), pick(await at(768, plain)), 'at 768px')
 
@@ -130,12 +151,11 @@ for (const optimize of [false, true]) test(`computed styles match Tailwind at br
     assert.equal(mid.child, '16px') // tokens do not inherit
 
     // A non-length at a breakpoint is a wall: below it nothing bends towards
-    // the breakpoint above. So is a percentage height or vertical offset,
-    // which turns into auto under an auto-height parent (u3, u5).
+    // the breakpoint above.
     for (const width of [544, 767, 900, 1100]) {
       const fl = await at(width, fluid)
       const pl = await at(width, plain)
-      for (const id of ['m1', 'l1', 'u3', 'u5']) assert.equal(fl[id], pl[id], `${id} at ${width}px`)
+      for (const id of ['m1', 'l1']) assert.equal(fl[id], pl[id], `${id} at ${width}px`)
       // Slash radii and rounded-full (2147483647px when optimized) never interpolate.
       for (const id of ['r2', 'r3', 'r4']) assert.equal(fl[id], pl[id], `${id} at ${width}px`)
     }
@@ -170,7 +190,21 @@ for (const optimize of [false, true]) test(`computed styles match Tailwind at br
     assert.equal((await at(896, fluid)).w1, '692px') // md:w-full 1000px at 768 → 384px at 1024
     assert.equal(mid.u1, '274px') // 3rem → 50% of 1000px
     assert.ok(Math.abs(parseFloat(mid.u2) - 190.4) < 0.1, `u2 ${mid.u2}`) // 20vw → 50vw: 35vw at 544px
-    assert.ok(Math.abs(parseFloat(mid.u4) - 124) < 0.1, `u4 ${mid.u4}`) // 48px → 50vh of a 400px-tall viewport
+    assert.ok(Math.abs(parseFloat(mid.u4) - 124) < 0.1, `u4 ${mid.u4}`)
+    // A percentage height interpolates where its parent has a height.
+    assert.equal(mid.u3, '124px') // 48px → 50% of 400px
+    assert.equal(mid.u5, '108px') // 16px → 50% of 400px
+    // Border and outline widths, translate, scale, rotate and opacity: all halfway.
+    for (const id of ['b1', 'b2', 'dv', 'o1', 'o2']) assert.equal(mid[id], '5px', id) // 2px → 8px
+    assert.equal(mid.t1, '32px') // 16px → 48px, through --tw-translate-x
+    assert.equal(mid.t2, '6px') // -8px → 50% of 40px
+    assert.equal(mid.k1, '1.25') // 100% → 150%, through --tw-scale-x and -y
+    assert.equal(mid.k2, '1') // scale-x 50% → 150%; y stays 1
+    assert.equal(mid.k3, '1.4') // a bare scale: 1.2 → 1.6
+    assert.equal(mid.q1, '45deg')
+    assert.equal(mid.q2, '16.5deg') // -12deg → 45deg
+    assert.equal(mid.op1, '0.6') // 20% → 100%
+    assert.equal(mid.op2, '0.5') // .2 → 80%: a number and a percentage meet // 48px → 50vh of a 400px-tall viewport
   } finally {
     await browser.close()
   }

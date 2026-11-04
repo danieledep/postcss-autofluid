@@ -9,14 +9,24 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 - Percentages, viewport units and container units interpolate by default
   (`w-12 md:w-1/2`, `w-full md:w-64`, `mt-[2vw]`). `calc()` mixes them with
-  other lengths, so the ends of a curve need not share a unit. Percentages
-  stay fixed on `height`, `max-height`, `flex-basis`, `top`, `bottom` and
-  `inset`, where an unresolvable one turns the whole value into `auto`.
+  other lengths, so the ends of a curve need not share a unit. In an
+  auto-height parent a percentage height can't resolve and the whole value
+  is auto, so `h-12 md:h-1/2` there is auto below `md` as well.
 
 ### Removed
 - The `units` option. Every length unit now interpolates.
 
 ### Added
+- Border widths (`border-*`, `border-x-*`, `border-s-*`, `divide-x-*`, …),
+  `outline-width` and `outline-offset` are fluid. A multi-value
+  `border-width` splits into its sides or axes.
+- `rotate` interpolates angles; `opacity` and `scale` interpolate ratios,
+  with percentages published as numbers so `opacity-50` (dev) and `.5`
+  (optimized) are one family.
+- Translate and scale interpolate through Tailwind's per-axis variables
+  (`--tw-translate-x`, `--tw-scale-y`, …, and Tailwind 3's `--tw-rotate`),
+  so `scale-100 md:scale-x-150` composes the way Tailwind does. Tokens for
+  a variable drop its leading dashes: `--fl-tw-scale-x-48rem`.
 - Logical properties are fluid by default: `margin-inline-start` and the
   other start/end longhands for margins, paddings, scroll margins and
   paddings and insets (`ms-*`, `pe-*`, `start-*`, `end-*`), and the logical
