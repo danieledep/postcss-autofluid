@@ -407,7 +407,7 @@ function fluidVariants(options = {}) {
     containerMinWidth = minWidth,
     properties = DEFAULT_PROPERTIES,
     exclude = [],
-    layers = 'auto',
+    layers = ['utilities'],
   } = options
 
   // `exclude` names properties exactly: leaving out `padding` keeps
@@ -431,10 +431,11 @@ function fluidVariants(options = {}) {
     postcssPlugin: 'postcss-fluid-variants',
 
     OnceExit(root, { AtRule, Rule, Declaration, result }) {
-      // Which layers to read. 'auto' reads only `@layer utilities` when the
-      // stylesheet has one — Tailwind v4 puts every generated utility and
-      // every `@utility` block there — and everything otherwise, which is
-      // what unlayered Tailwind v3 output needs. Null reads every rule.
+      // Which layers to read. The default is `@layer utilities`, where
+      // Tailwind v4 puts every generated utility and every `@utility` block.
+      // 'auto' reads that layer when the stylesheet has one and everything
+      // otherwise, which is what unlayered Tailwind v3 output needs. Null
+      // reads every rule.
       let scope = null
       if (layers === 'auto') {
         let layered = false
@@ -532,20 +533,36 @@ function fluidVariants(options = {}) {
         // for fluid properties, its shape is one this walk does not read — say
         // so, rather than emitting nothing and looking like a browser-support
         // gap that @supports quietly handled.
-        let responsive = 0
-        let first = null
-        root.walkAtRules('media', (atRule) => {
-          if (!MIN_WIDTH.test(atRule.params)) return
-          atRule.walkDecls((node) => {
-            if (!fluidable.has(node.prop) || !inScope(node)) return
-            const split = components(node.prop, node.value.trim())
-            if (split?.some(([name, part]) => fluidable.has(name) && channelOf(name, part, varsOf(node.parent)))) {
-              responsive++
-              first ??= node
-            }
+        const unread = (scoped) => {
+          let count = 0
+          let first = null
+          root.walkAtRules('media', (atRule) => {
+            if (!MIN_WIDTH.test(atRule.params)) return
+            atRule.walkDecls((node) => {
+              if (!fluidable.has(node.prop) || (scoped && !inScope(node))) return
+              const split = components(node.prop, node.value.trim())
+              if (split?.some(([name, part]) => fluidable.has(name) && channelOf(name, part, varsOf(node.parent)))) {
+                count++
+                first ??= node
+              }
+            })
           })
-        })
-        if (responsive) {
+          return { count, first }
+        }
+        const { count: responsive, first } = unread(true)
+        // None of the named layers is in the stylesheet, yet it has responsive
+        // values: almost always unlayered Tailwind v3 output under the default.
+        let listed = false
+        if (scope) root.walkAtRules('layer', (at) => { if (at.nodes && scope.has(at.params.trim())) listed = true })
+        const outside = scope && !listed && !responsive ? unread(false) : { count: 0 }
+        if (outside.count) {
+          result.warn(
+            `Found ${outside.count} responsive declaration(s) for fluid properties, but none inside ` +
+              `@layer ${[...scope].join(', ')}, the only layer(s) this plugin reads, and the stylesheet ` +
+              'has no such layer. Tailwind v3 output is unlayered: pass `layers: null` to read every rule.',
+            { node: outside.first },
+          )
+        } else if (responsive) {
           result.warn(
             `Found ${responsive} responsive declaration(s) for fluid properties but could not read ` +
               'any of them, so nothing was made fluid. This usually means the stylesheet is shaped ' +
