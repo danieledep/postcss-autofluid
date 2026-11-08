@@ -57,11 +57,15 @@ assembles whatever co-occurs on an element.
   two non-contiguous uses of one chain moves a twin backwards past rules it must
   beat. Tailwind's `.container` is the case that exposes this — it emits its own
   per-breakpoint blocks early, far from the variant blocks.
-- Breakpoints and layers are discovered from the output, not configured. By
-  default (`layers: 'auto'`) only `@layer utilities` is read when the output
-  has one; that is the fence that keeps authored CSS in `components`, `base`
-  and unlayered sheets out. Without it (v3) every rule is read. `null` reads
-  everything; a list narrows explicitly.
+- Breakpoints are discovered from the output, not configured. Layers default
+  to `['utilities']`: that is the fence that keeps authored CSS in
+  `components`, `base` and unlayered sheets out. Dan chose the explicit list
+  over `'auto'` (still accepted: utilities if present, else everything).
+  Tailwind v3 output is unlayered, so it needs `null` or `'auto'`; when
+  responsive values exist but no listed layer does, the plugin warns rather
+  than emit nothing silently. Reading `components` too was measured on four
+  real codebases at +0–2 points of size; a fixed component value then curves
+  towards a responsive utility on the same element.
 - Only lengths interpolate, plus unitless numbers on `NUMBER_PROPS`
   (`line-height`). `interpolable()` resolves `var()` through root custom
   properties (Tailwind emits used theme variables on `:root, :host`) and the

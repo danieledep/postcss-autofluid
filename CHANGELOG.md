@@ -7,6 +7,10 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
+- `layers` defaults to `['utilities']` instead of `'auto'`. Tailwind 4 output
+  is read exactly as before. Tailwind 3 output, which is unlayered, now needs
+  `layers: null` (or `'auto'`, still accepted); the plugin warns when it
+  finds responsive values but none of the listed layers.
 - Percentages, viewport units and container units interpolate by default
   (`w-12 md:w-1/2`, `w-full md:w-64`, `mt-[2vw]`). `calc()` mixes them with
   other lengths, so the ends of a curve need not share a unit. In an

@@ -55,11 +55,15 @@ const fixture = `
 }
 `
 
+// Most cases below are bare fragments with no layers, shaped like Tailwind v3
+// output, so they read every rule; anything layered keeps the default.
+const options = (css, opts) => (/@layer\b/.test(css) ? opts : { layers: null, ...opts })
+
 const run = async (css, opts) =>
-  (await postcss([fluidVariants(opts)]).process(css, { from: undefined })).css
+  (await postcss([fluidVariants(options(css, opts))]).process(css, { from: undefined })).css
 
 const warningsFor = async (css, opts) =>
-  (await postcss([fluidVariants(opts)]).process(css, { from: undefined })).warnings().map((w) => w.text)
+  (await postcss([fluidVariants(options(css, opts))]).process(css, { from: undefined })).warnings().map((w) => w.text)
 
 const appendix = async (css, opts) => {
   const out = await run(css, opts)
@@ -316,6 +320,19 @@ test('reads only @layer utilities when the stylesheet has one', async () => {
   assert.doesNotMatch(out, /\.card|--fl-padding/)
   // an explicit null reads every layer again
   assert.match(await appendix(css, { layers: null }), /\.card \{ --fl-padding-48rem: 2rem/)
+})
+
+test('reads only the utilities layer by default, and says so when the stylesheet has none', async () => {
+  const v3 = `.mt-6 { margin-top: 1.5rem } @media (min-width: 768px) { .md\\:mt-8 { margin-top: 2rem } }`
+  const plugin = (opts) => postcss([fluidVariants(opts)]).process(v3, { from: undefined })
+  const res = await plugin()
+  assert.equal(res.css, v3)
+  assert.equal(res.warnings().length, 1)
+  assert.match(res.warnings()[0].text, /none inside @layer utilities.*layers: null/)
+  // 'auto' and null read unlayered output
+  for (const layers of ['auto', null]) assert.match((await plugin({ layers })).css, /--fl-margin-top-768px: 2rem/)
+  // a plain stylesheet with nothing responsive stays silent
+  assert.deepEqual((await postcss([fluidVariants()]).process(`.a { margin-top: 1rem }`, { from: undefined })).warnings(), [])
 })
 
 test('does not warn about responsive CSS outside the layers it reads', async () => {

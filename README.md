@@ -93,7 +93,7 @@ Why not a Tailwind plugin? Because inside Tailwind's plugin API the breakpoint i
 
 Three fences decide what the plugin touches, so it stays out of everything that isn't a Tailwind length utility.
 
-**Layer.** When the stylesheet has an `@layer utilities` block — every Tailwind v4 build does — only that layer is read. Generated utilities and your own `@utility` blocks live there; `@layer components`, `@layer base` and unlayered hand-written CSS are never touched. Without one (Tailwind v3, whose output is unlayered) every rule is read.
+**Layer.** By default only `@layer utilities` is read. Tailwind 4 puts generated utilities and your own `@utility` blocks there; `@layer components`, `@layer base` and unlayered hand-written CSS are not touched unless you list them in `layers`. Tailwind 3 output is unlayered, so it needs `layers: null` (see Options).
 
 **Property.** Margins, paddings, insets, scroll margins and paddings (physical and logical, so `ms-*`, `pe-*`, `start-*` and `space-x-*` / `space-y-*` too), gaps, `font-size`, `line-height`, `letter-spacing`, widths and heights with their min and max, `flex-basis`, border radii (corners and logical corners such as `rounded-s-*`), border widths (sides, axes and logical sides, `divide-x-*` / `divide-y-*` too), `outline-width` and `outline-offset`, `rotate`, `scale`, `opacity`, and translate and scale through the per-axis variables Tailwind composes them from (`--tw-translate-x`, `--tw-scale-y`, …; Tailwind 3's `--tw-rotate` too).
 
@@ -138,13 +138,13 @@ The output survives esbuild, Lightning CSS and cssnano minification unchanged in
   containerMinWidth: …,  // container width where the base value sits for @md: and friends; defaults to minWidth
   properties: [...],     // which properties to make fluid; replaces the default list (see index.js)
   exclude: [],           // properties to leave out of that list
-  layers: 'auto',        // 'auto': utilities if present, else all; null: all; or a list of layer names
+  layers: ['utilities'], // layer names to read; null: every rule; 'auto': utilities if present, else all
 }
 ```
 
 `exclude` is the way to drop a few properties and keep the rest: `exclude: ['max-width']` keeps Tailwind's `container` stepping at its breakpoints. Names are exact, so excluding `padding` leaves `padding-top` and the other longhands fluid. `properties` replaces the whole list instead.
 
-`layers: 'auto'` reads `@layer utilities` when the stylesheet has one and every rule otherwise. Pass a list to name the layers yourself, or `null` to read everything regardless.
+`layers` defaults to `['utilities']`, where Tailwind 4 puts every generated utility and your `@utility` blocks. Add `'components'` to make your own component classes fluid too: a component's fixed value then curves towards a responsive utility on the same element, and stays fixed without one. Tailwind 3 output has no layers, so pass `layers: null` (every rule) or `'auto'` (utilities when the stylesheet has that layer, every rule otherwise); if responsive values exist but none of the listed layers does, the plugin warns.
 
 Values are copied verbatim once they pass the fence, so the token is still resolved on the element: a per-element `[--spacing:1px]` override applies, as do arbitrary values like `mt-[31px]` and `w-[calc(2rem+3px)]`.
 
