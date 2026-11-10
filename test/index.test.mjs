@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import postcss from 'postcss'
-import fluidify from '../index.js'
+import autofluid from '../index.js'
 
 // What `@tailwindcss/postcss` emits for:
 //   <div class="mt-6 md:mt-8 text-base xl:text-xl 2xl:mt-11 hover:mt-8 md:flex
@@ -61,10 +61,10 @@ const options = (css, opts) => ({ ...(/@layer\b/.test(css) ? {} : { layers: null
 
 const unhash = (css) => css.replace(/--([a-z][a-z0-9-]*?)_[0-9a-z]{5}\b/g, '--$1')
 const run = async (css, opts) =>
-  unhash((await postcss([fluidify(options(css, opts))]).process(css, { from: undefined })).css)
+  unhash((await postcss([autofluid(options(css, opts))]).process(css, { from: undefined })).css)
 
 const warningsFor = async (css, opts) =>
-  (await postcss([fluidify(options(css, opts))]).process(css, { from: undefined })).warnings().map((w) => w.text)
+  (await postcss([autofluid(options(css, opts))]).process(css, { from: undefined })).warnings().map((w) => w.text)
 
 const appendix = async (css, opts) => {
   const out = await run(css, opts)
@@ -208,7 +208,7 @@ test('honours prefix and minWidth options', async () => {
 
 test('gives every generated node a source location', async () => {
   const root = postcss.parse(fixture, { from: '/app.css' })
-  await postcss([fluidify()]).process(root, { from: '/app.css' })
+  await postcss([autofluid()]).process(root, { from: '/app.css' })
   const missing = []
   root.walk((node) => { if (!node.source?.input.file) missing.push(node.type + ' ' + (node.selector || node.prop || node.params)) })
   assert.deepEqual(missing, [])
@@ -325,7 +325,7 @@ test('reads only @layer utilities when the stylesheet has one', async () => {
 
 test('reads only the utilities layer by default, and says so when the stylesheet has none', async () => {
   const v3 = `.mt-6 { margin-top: 1.5rem } @media (min-width: 768px) { .md\\:mt-8 { margin-top: 2rem } }`
-  const plugin = (opts) => postcss([fluidify(opts)]).process(v3, { from: undefined })
+  const plugin = (opts) => postcss([autofluid(opts)]).process(v3, { from: undefined })
   const res = await plugin()
   assert.equal(res.css, v3)
   assert.equal(res.warnings().length, 1)
@@ -333,7 +333,7 @@ test('reads only the utilities layer by default, and says so when the stylesheet
   // 'auto' and null read unlayered output
   for (const layers of ['auto', null]) assert.match((await plugin({ layers })).css, /--fl-margin-top-768px: 2rem/)
   // a plain stylesheet with nothing responsive stays silent
-  assert.deepEqual((await postcss([fluidify()]).process(`.a { margin-top: 1rem }`, { from: undefined })).warnings(), [])
+  assert.deepEqual((await postcss([autofluid()]).process(`.a { margin-top: 1rem }`, { from: undefined })).warnings(), [])
 })
 
 test('does not warn about responsive CSS outside the layers it reads', async () => {
@@ -575,8 +575,8 @@ test('output without container breakpoints has no container machinery', async ()
 
 test('points the no-op warning at the first unread declaration', async () => {
   const css = `@media (width >= 48rem) { .md\\:mt-8 > p { margin-top: 2rem } }`
-  const [warning] = (await postcss([fluidify()]).process(css, { from: undefined })).warnings()
-  assert.equal(warning.plugin, 'postcss-fluidify-breakpoints')
+  const [warning] = (await postcss([autofluid()]).process(css, { from: undefined })).warnings()
+  assert.equal(warning.plugin, 'postcss-autofluid')
   assert.equal(warning.node.prop, 'margin-top')
   assert.equal(warning.line, 1)
 })
@@ -792,7 +792,7 @@ test('by default, transforms, opacity and border widths step like Tailwind', asy
 })
 
 test('names the shared functions after their signature, so stylesheets on one page do not collide', async () => {
-  const build = async (css) => (await postcss([fluidify()]).process(css, { from: undefined })).css
+  const build = async (css) => (await postcss([autofluid()]).process(css, { from: undefined })).css
   const names = (css) => [...css.matchAll(/@function (--[\w-]+)\(/g)].map((m) => m[1])
   const md = `@layer utilities { .mt-6 { margin-top: 1.5rem } @media (width >= 48rem) { .md\\:mt-8 { margin-top: 2rem } } }`
   const smLg = `@layer utilities { .mt-6 { margin-top: 1.5rem } @media (width >= 40rem) { .sm\\:mt-8 { margin-top: 2rem } } @media (width >= 64rem) { .lg\\:mt-8 { margin-top: 3rem } } }`
@@ -820,13 +820,13 @@ test('accepts the obvious forms of each option', async () => {
   assert.match(await appendix(css, { properties: 'margin-top' }), /--fl-margin-top-48rem/)
   assert.doesNotMatch(await appendix(css, { exclude: 'margin-top' }), /--fl-margin-top/)
   // postcss-load-config passes `true` or nothing for an option-less plugin
-  assert.doesNotThrow(() => fluidify(true))
-  assert.doesNotThrow(() => fluidify())
+  assert.doesNotThrow(() => autofluid(true))
+  assert.doesNotThrow(() => autofluid())
 })
 
 test('throws a clear error for an option it cannot use', () => {
-  const throws = (opts, pattern) => assert.throws(() => fluidify(opts), (error) => {
-    assert.match(error.message, /^postcss-fluidify-breakpoints: /)
+  const throws = (opts, pattern) => assert.throws(() => autofluid(opts), (error) => {
+    assert.match(error.message, /^postcss-autofluid: /)
     assert.match(error.message, pattern)
     return true
   })

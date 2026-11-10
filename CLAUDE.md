@@ -82,7 +82,7 @@ assembles whatever co-occurs on an element.
   per-element opt-out by design; `!important` is the documented escape
   hatch, `exclude` the per-property one.
 - Options are validated in `normalize()` and a bad one throws at creation
-  with a `postcss-fluidify-breakpoints:` prefix. A single string is accepted
+  with a `postcss-autofluid:` prefix. A single string is accepted
   for any list, a number for a width is px. `units` (removed after 0.4) throws
   with a pointer to `include`.
 - Only lengths interpolate, plus unitless numbers on `NUMBER_PROPS`

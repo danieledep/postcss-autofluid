@@ -7,8 +7,9 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
-- Renamed to `postcss-fluidify-breakpoints` (was `postcss-fluid-variants`).
-  The plugin adds no variants; the name now says what it does.
+- Renamed to `postcss-autofluid` (was `postcss-fluid-variants`). The plugin
+  adds no variants: it makes the responsive utilities you already write
+  fluid, automatically.
 - The defaults are type and spacing in absolute and font-relative lengths
   (`px`, `rem`, `em`, …). Percentages, viewport and container units, border
   and outline widths, transforms and opacity step at their breakpoints as in
