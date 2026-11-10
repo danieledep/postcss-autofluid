@@ -7,8 +7,9 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
-- Renamed to `postcss-fluidify-breakpoints` (was `postcss-fluid-variants`).
-  The plugin adds no variants; the name now says what it does.
+- Renamed to `postcss-autofluid` (was `postcss-fluid-variants`). The plugin
+  adds no variants: it makes the responsive utilities you already write
+  fluid, automatically.
 - The defaults are type and spacing in absolute and font-relative lengths
   (`px`, `rem`, `em`, …). Percentages, viewport and container units, border
   and outline widths, transforms and opacity step at their breakpoints as in
@@ -170,9 +171,9 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Initial release: responsive Tailwind utilities become fluid by appending
   twins that feed a shared `@function` interpolator inside `@supports`.
 
-[Unreleased]: https://github.com/danieledep/postcss-fluid-variants/compare/v0.4.0...HEAD
-[0.4.0]: https://github.com/danieledep/postcss-fluid-variants/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/danieledep/postcss-fluid-variants/compare/v0.2.1...v0.3.0
-[0.2.1]: https://github.com/danieledep/postcss-fluid-variants/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/danieledep/postcss-fluid-variants/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/danieledep/postcss-fluid-variants/releases/tag/v0.1.0
+[Unreleased]: https://github.com/danieledep/postcss-autofluid/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/danieledep/postcss-autofluid/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/danieledep/postcss-autofluid/compare/v0.2.1...v0.3.0
+[0.2.1]: https://github.com/danieledep/postcss-autofluid/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/danieledep/postcss-autofluid/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/danieledep/postcss-autofluid/releases/tag/v0.1.0

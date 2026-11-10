@@ -11,7 +11,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import postcss from 'postcss'
-import fluidify from '../index.js'
+import autofluid from '../index.js'
 
 const optional = async (name) => import(name).catch(() => null)
 const playwright = await optional('playwright')
@@ -123,9 +123,9 @@ for (const optimize of [false, true]) test(`computed styles match Tailwind at br
   // Production builds run Tailwind's optimizer, which rewrites values (calc(var(--spacing) * 0) → 0).
   const plain = (await postcss([tailwind.default({ optimize })]).process(source, { from: 'app.css' })).css
   // Every opt-in group on, so each kind of value is checked against Chromium.
-  const fluid = (await postcss([fluidify({ include: 'all' })]).process(plain, { from: undefined })).css
+  const fluid = (await postcss([autofluid({ include: 'all' })]).process(plain, { from: undefined })).css
   // The defaults: type and spacing only.
-  const defaults = (await postcss([fluidify()]).process(plain, { from: undefined })).css
+  const defaults = (await postcss([autofluid()]).process(plain, { from: undefined })).css
 
   const browser = await launch()
   try {

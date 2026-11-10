@@ -1,14 +1,14 @@
 {
-  "name": "postcss-fluidify-breakpoints",
+  "name": "postcss-autofluid",
   "version": "0.4.0",
   "description": "Make Tailwind's responsive type and spacing fluid, after the fact. Drop-in, no new syntax.",
   "homepage": "https://danieledep.github.io/fluid-variants-site/",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/danieledep/postcss-fluid-variants.git"
+    "url": "git+https://github.com/danieledep/postcss-autofluid.git"
   },
   "bugs": {
-    "url": "https://github.com/danieledep/postcss-fluid-variants/issues"
+    "url": "https://github.com/danieledep/postcss-autofluid/issues"
   },
   "exports": "./index.js",
   "files": [

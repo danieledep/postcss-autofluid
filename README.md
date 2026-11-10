@@ -1,4 +1,4 @@
-# postcss-fluidify-breakpoints
+# postcss-autofluid
 
 Make Tailwind's responsive type and spacing fluid, after the fact.
 
@@ -16,7 +16,7 @@ See it running at [danieledep.github.io/fluid-variants-site](https://danieledep.
 Not published to npm yet. Once it is:
 
 ```sh
-npm install -D postcss-fluidify-breakpoints
+npm install -D postcss-autofluid
 ```
 
 ```js
@@ -24,7 +24,7 @@ npm install -D postcss-fluidify-breakpoints
 export default {
   plugins: {
     '@tailwindcss/postcss': {},
-    'postcss-fluidify-breakpoints': {},
+    'postcss-autofluid': {},
   },
 }
 ```
@@ -40,12 +40,12 @@ The package is plain CommonJS, so a `require()` in a webpack, laravel-mix or Gul
 mix.options({
   postCss: [
     require('@tailwindcss/postcss'),
-    require('postcss-fluidify-breakpoints'),
+    require('postcss-autofluid'),
   ],
 })
 ```
 
-`import fluidify from 'postcss-fluidify-breakpoints'` resolves to the same factory.
+`import autofluid from 'postcss-autofluid'` resolves to the same factory.
 
 ### Vite
 
@@ -181,7 +181,7 @@ A ratio never meets a length. In `text-sm/6 md:text-lg`, `1.5rem` holds up to `m
 ## Options
 
 ```js
-'postcss-fluidify-breakpoints': {
+'postcss-autofluid': {
   prefix: 'fl',          // token and function names: --fl-<prop>-<bp>, --fl_<hash>()
   minWidth: '20rem',     // viewport where the base (unprefixed) value sits; a number is px
   containerMinWidth: …,  // container width where the base value sits for @md: and friends; defaults to minWidth

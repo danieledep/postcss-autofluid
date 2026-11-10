@@ -1,5 +1,5 @@
 /**
- * postcss-fluidify-breakpoints
+ * postcss-autofluid
  *
  * Runs after Tailwind. For every responsive utility it finds in the output —
  *
@@ -38,7 +38,7 @@ const {
 const { UTILITY, MIN_WIDTH, BASE, contextOf } = require('./lib/context.js')
 const { interpolator, signature } = require('./lib/interpolator.js')
 
-function fluidify(options) {
+function autofluid(options) {
   const { prefix, minWidth, containerMinWidth, fluidable, units, layers } = normalize(options)
 
   // `--tw-scale-x` names its tokens `--fl-tw-scale-x-*`.
@@ -343,6 +343,6 @@ function fluidify(options) {
   }
 }
 
-fluidify.postcss = true
+autofluid.postcss = true
 
-module.exports = fluidify
+module.exports = autofluid
