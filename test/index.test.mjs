@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import postcss from 'postcss'
-import fluidVariants from '../index.js'
+import fluidify from '../index.js'
 
 // What `@tailwindcss/postcss` emits for:
 //   <div class="mt-6 md:mt-8 text-base xl:text-xl 2xl:mt-11 hover:mt-8 md:flex
@@ -57,13 +57,14 @@ const fixture = `
 
 // Most cases below are bare fragments with no layers, shaped like Tailwind v3
 // output, so they read every rule; anything layered keeps the default.
-const options = (css, opts) => (/@layer\b/.test(css) ? opts : { layers: null, ...opts })
+const options = (css, opts) => ({ ...(/@layer\b/.test(css) ? {} : { layers: null }), ...opts })
 
+const unhash = (css) => css.replace(/--([a-z][a-z0-9-]*?)_[0-9a-z]{5}\b/g, '--$1')
 const run = async (css, opts) =>
-  (await postcss([fluidVariants(options(css, opts))]).process(css, { from: undefined })).css
+  unhash((await postcss([fluidify(options(css, opts))]).process(css, { from: undefined })).css)
 
 const warningsFor = async (css, opts) =>
-  (await postcss([fluidVariants(options(css, opts))]).process(css, { from: undefined })).warnings().map((w) => w.text)
+  (await postcss([fluidify(options(css, opts))]).process(css, { from: undefined })).warnings().map((w) => w.text)
 
 const appendix = async (css, opts) => {
   const out = await run(css, opts)
@@ -207,7 +208,7 @@ test('honours prefix and minWidth options', async () => {
 
 test('gives every generated node a source location', async () => {
   const root = postcss.parse(fixture, { from: '/app.css' })
-  await postcss([fluidVariants()]).process(root, { from: '/app.css' })
+  await postcss([fluidify()]).process(root, { from: '/app.css' })
   const missing = []
   root.walk((node) => { if (!node.source?.input.file) missing.push(node.type + ' ' + (node.selector || node.prop || node.params)) })
   assert.deepEqual(missing, [])
@@ -324,7 +325,7 @@ test('reads only @layer utilities when the stylesheet has one', async () => {
 
 test('reads only the utilities layer by default, and says so when the stylesheet has none', async () => {
   const v3 = `.mt-6 { margin-top: 1.5rem } @media (min-width: 768px) { .md\\:mt-8 { margin-top: 2rem } }`
-  const plugin = (opts) => postcss([fluidVariants(opts)]).process(v3, { from: undefined })
+  const plugin = (opts) => postcss([fluidify(opts)]).process(v3, { from: undefined })
   const res = await plugin()
   assert.equal(res.css, v3)
   assert.equal(res.warnings().length, 1)
@@ -332,7 +333,7 @@ test('reads only the utilities layer by default, and says so when the stylesheet
   // 'auto' and null read unlayered output
   for (const layers of ['auto', null]) assert.match((await plugin({ layers })).css, /--fl-margin-top-768px: 2rem/)
   // a plain stylesheet with nothing responsive stays silent
-  assert.deepEqual((await postcss([fluidVariants()]).process(`.a { margin-top: 1rem }`, { from: undefined })).warnings(), [])
+  assert.deepEqual((await postcss([fluidify()]).process(`.a { margin-top: 1rem }`, { from: undefined })).warnings(), [])
 })
 
 test('does not warn about responsive CSS outside the layers it reads', async () => {
@@ -340,7 +341,7 @@ test('does not warn about responsive CSS outside the layers it reads', async () 
   assert.deepEqual(await warningsFor(css), [])
 })
 
-test('interpolates every length, percentages and viewport units included, and nothing else', async () => {
+test('with percentages and viewport and container units opted in, interpolates every length and nothing else', async () => {
   const css = themed(`@layer utilities {
     .w-64 { width: calc(var(--spacing) * 64) }
     .w-full { width: 100% }
@@ -355,7 +356,7 @@ test('interpolates every length, percentages and viewport units included, and no
       .md\\:max-w-\\[40rem\\] { max-width: 40rem }
     }
   }`)
-  const out = flat(await appendix(css))
+  const out = flat(await appendix(css, { include: ['percentages', 'viewport-units', 'container-units'] }))
   assert.match(out, /\.w-64 \{ --fl-width-0: calc\(var\(--spacing\) \* 64\); width: --fl-width\(\); \}/)
   assert.match(out, /\.max-w-md \{ --fl-max-width-0: var\(--container-md\);/)
   // calc() mixes them with rem, so the two ends need not share a unit
@@ -369,18 +370,18 @@ test('interpolates every length, percentages and viewport units included, and no
   assert.doesNotMatch(out, /--fl-width-0: (fit-content|var\(--x\))/)
 })
 
-test('interpolates percentage heights and offsets too', async () => {
+test('interpolates opted-in percentage heights and offsets too', async () => {
   const css = `.h-12 { height: 3rem } .top-4 { top: 1rem }
     @media (width >= 48rem) { .md\\:h-1\\/2 { height: 50% } .md\\:top-1\\/2 { top: 50% } }`
-  const out = flat(await appendix(css))
+  const out = flat(await appendix(css, { include: 'percentages' }))
   assert.match(out, /\.md\\:h-1\\\/2 \{ --fl-height-48rem: 50%; \}/)
   assert.match(out, /\.md\\:top-1\\\/2 \{ --fl-top-48rem: 50%; \}/)
 })
 
-test('splits border widths into their sides and axes', async () => {
+test('with borders opted in, splits border widths into their sides and axes', async () => {
   const css = `.border-2 { border-width: 2px } .border-\\[1px_2px\\] { border-width: 1px 2px } .border-x-2 { border-inline-width: 2px 4px }
     @media (width >= 48rem) { .md\\:border-8 { border-width: 8px } .md\\:border-y-4 { border-block-width: 4px } .md\\:border-s-4 { border-inline-start-width: 4px } }`
-  const out = flat(await appendix(css))
+  const out = flat(await appendix(css, { include: 'borders' }))
   assert.match(out, /\.border-2 \{ --fl-border-width-0: 2px; border-width: --fl-border-width\(\); \}/)
   // only the longhands with a responsive value anywhere get tokens
   assert.match(out, /\.border-\\\[1px_2px\\\] \{ --fl-border-block-width-0: 1px; border-block-width: --fl-border-block-width\(\); \}/)
@@ -388,7 +389,7 @@ test('splits border widths into their sides and axes', async () => {
   assert.match(out, /\.md\\:border-y-4 \{ --fl-border-block-width-48rem: 4px; \}/)
 })
 
-test('interpolates Tailwind transform variables, rotate angles and opacity', async () => {
+test('with transforms and opacity opted in, interpolates Tailwind transform variables, rotate angles and opacity', async () => {
   const css = themed(`@layer utilities {
     .translate-x-4 { --tw-translate-x: calc(var(--spacing) * 4); translate: var(--tw-translate-x) var(--tw-translate-y) }
     .scale-100 { --tw-scale-x: 100%; --tw-scale-y: 100%; --tw-scale-z: 100%; scale: var(--tw-scale-x) var(--tw-scale-y) }
@@ -401,7 +402,7 @@ test('interpolates Tailwind transform variables, rotate angles and opacity', asy
       .md\\:rotate-45 { rotate: 45deg } .md\\:opacity-100 { opacity: 1 } .md\\:rotate-x-45 { --tw-rotate-x: rotateX(45deg) }
     }
   }`)
-  const out = flat(await appendix(css))
+  const out = flat(await appendix(css, { include: ['transforms', 'opacity', 'percentages'] }))
   // the variable is the property; its tokens drop the leading dashes
   assert.match(out, /\.translate-x-4 \{ --fl-tw-translate-x-0: calc\(var\(--spacing\) \* 4\); --tw-translate-x: --fl-tw-translate-x\(\); \}/)
   assert.match(out, /@function --fl-tw-translate-x\(\) \{ result: --fl\(var\(--fl-tw-translate-x-0\), var\(--fl-tw-translate-x-48rem\)\); \}/)
@@ -421,14 +422,14 @@ test('interpolates Tailwind transform variables, rotate angles and opacity', asy
   assert.doesNotMatch(out, /--fl-translate|--fl-scale-/)
 })
 
-test('reads Tailwind 3 transforms, which compose every axis in transform', async () => {
+test('reads opted-in Tailwind 3 transforms, which compose every axis in transform', async () => {
   const css = `.rotate-0 { --tw-rotate: 0deg; transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) }
     .scale-100 { --tw-scale-x: 1; --tw-scale-y: 1; transform: translate(var(--tw-translate-x), var(--tw-translate-y)) scale(var(--tw-scale-x), var(--tw-scale-y)) }
     @media (min-width: 768px) {
       .md\\:rotate-45 { --tw-rotate: 45deg; transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) }
       .md\\:scale-150 { --tw-scale-x: 1.5; --tw-scale-y: 1.5; transform: translate(var(--tw-translate-x), var(--tw-translate-y)) scale(var(--tw-scale-x), var(--tw-scale-y)) }
     }`
-  const out = flat(await appendix(css))
+  const out = flat(await appendix(css, { include: 'transforms' }))
   assert.match(out, /\.rotate-0 \{ --fl-tw-rotate-0: 0deg; --tw-rotate: --fl-tw-rotate\(\); \}/)
   assert.match(out, /\.md\\:scale-150 \{ --fl-tw-scale-x-768px: 1\.5;/)
 })
@@ -574,8 +575,8 @@ test('output without container breakpoints has no container machinery', async ()
 
 test('points the no-op warning at the first unread declaration', async () => {
   const css = `@media (width >= 48rem) { .md\\:mt-8 > p { margin-top: 2rem } }`
-  const [warning] = (await postcss([fluidVariants()]).process(css, { from: undefined })).warnings()
-  assert.equal(warning.plugin, 'postcss-fluid-variants')
+  const [warning] = (await postcss([fluidify()]).process(css, { from: undefined })).warnings()
+  assert.equal(warning.plugin, 'postcss-fluidify-breakpoints')
   assert.equal(warning.node.prop, 'margin-top')
   assert.equal(warning.line, 1)
 })
@@ -754,3 +755,90 @@ for (const [shape, css] of Object.entries(scopeVariant)) {
     assert.match(handed[0].at[1], scope)
   })
 }
+
+test('by default, percentages, viewport and container units are walls, not curves', async () => {
+  // stack then columns: full width below md, half from md, as in Tailwind
+  const css = `@layer utilities { .w-full { width: 100% } .w-12 { width: 3rem } .mt-\\[2vw\\] { margin-top: 2vw } .mt-4 { margin-top: 1rem }
+    @media (width >= 48rem) { .md\\:w-1\\/2 { width: calc(1/2 * 100%) } .md\\:w-64 { width: 16rem } .md\\:mt-\\[50cqw\\] { margin-top: 50cqw } .md\\:mt-8 { margin-top: 2rem } } }`
+  const out = flat(await appendix(css))
+  assert.doesNotMatch(out, /--fl-width-0: 100%|--fl-width-48rem: calc\(1\/2/)
+  // a fixed value at md re-asserts itself and walls off the band below
+  assert.match(out, /\.md\\:w-1\\\/2 \{ --fl-width-48rem-stop: 1; \}/)
+  assert.match(out, /\.md\\:w-1\\\/2 \{ width: calc\(1\/2 \* 100%\); \}/)
+  assert.match(out, /\.w-12 \{ --fl-width-0: 3rem;/)
+  assert.match(out, /\.mt-\\\[2vw\\\] \{ margin-top: 2vw; \}/)
+  assert.match(out, /--fl-margin-top-48rem-stop: 1/)
+})
+
+test('by default, transforms, opacity and border widths step like Tailwind', async () => {
+  // an off-canvas drawer, a show-on-desktop element and a border that appears
+  const css = `@layer utilities {
+    .-translate-x-full { --tw-translate-x: -100%; translate: var(--tw-translate-x) var(--tw-translate-y) }
+    .opacity-0 { opacity: 0% } .border-0 { border-width: 0px } .rotate-0 { rotate: 0deg }
+    @media (width >= 64rem) {
+      .lg\\:translate-x-0 { --tw-translate-x: 0px; translate: var(--tw-translate-x) var(--tw-translate-y) }
+      .lg\\:opacity-100 { opacity: 100% } .lg\\:border { border-width: 1px } .lg\\:rotate-180 { rotate: 180deg }
+    } }`
+  assert.equal(await run(css), css)
+  // opting in to transforms alone keeps the drawer's -100% a wall: it is a percentage
+  const out = flat(await appendix(css, { include: 'transforms' }))
+  assert.match(out, /\.-translate-x-full \{ --tw-translate-x: -100%; \}/)
+  assert.match(out, /\.lg\\:translate-x-0 \{ --fl-tw-translate-x-64rem: 0px; \}/)
+  assert.match(out, /--fl-rotate-64rem: 180deg/)
+  assert.doesNotMatch(out, /--fl-opacity|--fl-border/)
+  // 'all' turns every group on
+  const all = flat(await appendix(css, { include: 'all' }))
+  for (const name of ['--fl-tw-translate-x-0: -100%', '--fl-opacity-64rem: 1', '--fl-border-width-64rem: 1px']) assert.ok(all.includes(name), name)
+})
+
+test('names the shared functions after their signature, so stylesheets on one page do not collide', async () => {
+  const build = async (css) => (await postcss([fluidify()]).process(css, { from: undefined })).css
+  const names = (css) => [...css.matchAll(/@function (--[\w-]+)\(/g)].map((m) => m[1])
+  const md = `@layer utilities { .mt-6 { margin-top: 1.5rem } @media (width >= 48rem) { .md\\:mt-8 { margin-top: 2rem } } }`
+  const smLg = `@layer utilities { .mt-6 { margin-top: 1.5rem } @media (width >= 40rem) { .sm\\:mt-8 { margin-top: 2rem } } @media (width >= 64rem) { .lg\\:mt-8 { margin-top: 3rem } } }`
+  const a = names(await build(md))
+  const b = names(await build(smLg))
+  assert.match(a[0], /^--fl_[0-9a-z]{5}$/)
+  assert.equal(a[1], `${a[0]}-margin-top`)
+  assert.notEqual(a[0], b[0])
+  assert.notEqual(a[1], b[1])
+  // the same breakpoints give the same names, whatever else the file holds
+  const c = names(await build(md.replace('2rem', '3rem')))
+  assert.deepEqual(c, a)
+  // the feature check keeps its plain name
+  assert.match(await build(md), /@supports \(top: --fl\(\)\)/)
+})
+
+test('accepts the obvious forms of each option', async () => {
+  const css = `@layer utilities { .mt-6 { margin-top: 1.5rem } @media (width >= 48rem) { .md\\:mt-8 { margin-top: 2rem } } }`
+  // a single layer name as a string
+  assert.match(await appendix(css, { layers: 'utilities' }), /--fl-margin-top-48rem/)
+  // a bare number of pixels
+  assert.match(await appendix(css, { minWidth: 320 }), /else: 320px\)/)
+  assert.match(await appendix(css, { minWidth: '0' }), /else: 0px\)/)
+  // a single property name as a string
+  assert.match(await appendix(css, { properties: 'margin-top' }), /--fl-margin-top-48rem/)
+  assert.doesNotMatch(await appendix(css, { exclude: 'margin-top' }), /--fl-margin-top/)
+  // postcss-load-config passes `true` or nothing for an option-less plugin
+  assert.doesNotThrow(() => fluidify(true))
+  assert.doesNotThrow(() => fluidify())
+})
+
+test('throws a clear error for an option it cannot use', () => {
+  const throws = (opts, pattern) => assert.throws(() => fluidify(opts), (error) => {
+    assert.match(error.message, /^postcss-fluidify-breakpoints: /)
+    assert.match(error.message, pattern)
+    return true
+  })
+  throws({ units: ['%'] }, /`units` was removed.*include: \['percentages'/)
+  throws({ minwidth: '20rem' }, /unknown option `minwidth`\. Known options: prefix, minWidth/)
+  throws({ minWidth: '20' }, /`minWidth` must be a length/)
+  throws({ minWidth: '20vw' }, /`minWidth` must be a length/)
+  throws({ containerMinWidth: -1 }, /`containerMinWidth` must be a length/)
+  throws({ include: ['transform'] }, /unknown group 'transform' in `include`\. Groups: percentages, viewport-units, container-units, borders, transforms, opacity, all/)
+  throws({ layers: 42 }, /`layers` must be a string or an array of strings/)
+  throws({ properties: [''] }, /`properties` must be a string or an array of strings/)
+  throws({ prefix: 'f l' }, /`prefix` must be letters, digits and dashes/)
+  throws({ prefix: 'fl_x' }, /`prefix` must be/)
+  throws('fl', /options must be an object/)
+})
