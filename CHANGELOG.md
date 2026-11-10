@@ -42,6 +42,19 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   'container-units']` replaces it.
 
 ### Added
+- Root variables redefined per breakpoint make the utilities that read them
+  fluid: with `:root { --h1: 64px; @variant md { --h1: 96px } }`,
+  `font-size: var(--h1)` interpolates as if the utility held the variant
+  itself. Each value is copied under a name of its own
+  (`--fl--h1-0`, `--fl--h1-48rem`) where it is declared, and the utility
+  gets a token per breakpoint reading the copies. The variable is not
+  touched, so only fluid properties follow it. Root variables that read it
+  (`--input-padding: var(--spacing-xs)`), arithmetic and fallbacks follow
+  too; a variable set again elsewhere in the stylesheet
+  (`.section { --h1: 40px }`, `[--h1:40px]`) holds there as in Tailwind.
+  Not followed: a variable that changes kind between breakpoints, one only
+  a non-root rule changes, container variants, and values set outside the
+  stylesheet (inline styles, JavaScript).
 - `include` option: opt-in groups `percentages`, `viewport-units`,
   `container-units`, `borders`, `transforms`, `opacity`, or `all`.
 - Percentages, viewport units and container units can interpolate
@@ -78,6 +91,17 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
 ### Fixed
+- `p-4 pt-2` rendered `padding-top: 1rem` whenever the build had a
+  responsive `padding` but no responsive `padding-top`: the twin of `p-4`
+  comes after everything Tailwind wrote, `pt-2` had no twin, and the
+  shorthand overrode it. A rule that sets a side, axis or corner of a fluid
+  property (`pt-*`, `px-*`, `ps-*`, `left-*`, `gap-x-*`, `rounded-t-*`, …)
+  now always gets a twin re-asserting its value.
+- A theme variable that is a bare `0` (`--spacing-none: 0`) broke the curve
+  of anything interpolating with it: inside `calc()` a bare zero is a
+  number, as with a written `0`. `p-xs md:p-none` had no padding below
+  `md`. Where the variable is declared once, on the root, its zero is now
+  published as `0px`; one that is set again elsewhere stays live.
 - `mt-4 md:mt-8 @md:mt-12` rendered the `md` value where Tailwind renders the
   container one: the container value was only a base token, and the
   viewport token above it won. Wherever a container query sets a value, the

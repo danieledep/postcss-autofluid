@@ -82,6 +82,7 @@ There is no per-element switch. To keep a single utility out of the curve, mark 
 ### Gotchas
 
 - **Class-based `dark:` and other custom variants Tailwind sorts after the breakpoints.** A non-breakpoint variant becomes the *base* value under its condition, so `mt-6 dark:mt-10 md:mt-8` reads as "the dark base is 40, md is 32", where plain Tailwind lets `dark:` win at every width. Stack them (`dark:md:mt-8`) to say what you mean. Built-in media variants (`max-md:`, `print:`, `prefers-color-scheme` dark) match Tailwind.
+- **A theme variable set outside the stylesheet.** Utilities that read a [variable the root changes per breakpoint](#theme-variables-that-change-at-a-breakpoint) follow the values the stylesheet gives it. One set through a `style` attribute, from JavaScript, or in a stylesheet built separately (a component's scoped styles, say) is not seen, and those utilities keep following the stylesheet's values. Set it in a rule the plugin processes, or mark the utility `!important` to keep it reading the live variable.
 - **Viewport and container breakpoints on one property.** With `mt-4 md:mt-8 @md:mt-12` every value is right at every breakpoint, but the step into the container value is not interpolated.
 - **Percentage heights, once opted in.** When the parent's height is auto, a percentage can't resolve and the browser treats the *whole* value as auto, `3rem` and all. So in an auto-height parent, `h-12 md:h-1/2` is auto below `md` too, where plain Tailwind keeps `3rem`. Give the parent a height, or use `vh`/`dvh`.
 - **Several Tailwind builds on one page.** Each stylesheet names its functions after its own breakpoints, so two builds on one page don't overwrite each other's curves. Builds that both define the *same* utility still override each other in source order, as they do without this plugin.
@@ -151,11 +152,59 @@ Unnamed container variants (`@md:`, `@lg:`) are breakpoints too, on the containe
 
 An element follows the container wherever one of its container queries matches, since Tailwind sorts `@` variants after breakpoints and they win. Named containers (`@md/card:`) and container queries stacked with a breakpoint (`@lg:md:`) stay conditions, as below.
 
+### Theme variables that change at a breakpoint
+
+Design tokens are often redefined per breakpoint on the root, and read by utilities that have no variants of their own:
+
+```css
+@theme { --h1: 64px; --spacing-xs: 12px; --input-padding: var(--spacing-xs); }
+@layer theme {
+  :root {
+    @variant md { --h1: 96px; --spacing-xs: 16px; }
+    @variant lg { --h1: 140px; }
+  }
+}
+@utility h1 { font-size: var(--h1); }
+```
+
+`h1` interpolates 64px → 96px → 140px and `p-xs` 12px → 16px, as if each utility held a variant for every breakpoint its variable changes at. That holds through anything that reads the variable: `calc(var(--spacing-xs) * -1)` (`-mt-xs`), a fallback, or another root variable such as `--input-padding` above.
+
+The variable itself is never touched, and only utilities on a fluid property follow it. So the fences above still hold: `grid-cols-(--columns)` steps, `translate-x-(--spacing-xs)` steps unless `transforms` is opted in, and so does everything outside the layers the plugin reads. A variable that is a length at one breakpoint and something else at another (`16px`, then `auto`) is a switch, and steps too.
+
+`var(--h1)` only ever holds the value for the current viewport, and an interpolation needs both ends. So each value is published again under a name of its own, without its breakpoint, and the utility's tokens read those:
+
+```css
+@layer utilities {
+  .h1 {
+    --fl-font-size-0: var(--fl--h1-0);
+    --fl-font-size-48rem: var(--fl--h1-48rem);
+    --fl-font-size-64rem: var(--fl--h1-64rem);
+    font-size: --fl_k3x9a-font-size();
+  }
+}
+@layer theme {
+  :root, :host { --fl--h1-0: 64px; --fl--h1-48rem: initial; --fl--h1-64rem: initial }
+  :root        { --fl--h1-48rem: 96px; --fl--h1-64rem: 140px }
+}
+```
+
+A declaration holds from its breakpoint up, until a later one says otherwise: it sets the copy at its own breakpoint and clears the ones above (`initial`), and a token that reads a cleared copy says nothing.
+
+Each copy sits where its declaration sits (same selector, same layer, same order), so the cascade settles the copies the way it settles the variable:
+
+- **Setting the variable again works as in Tailwind**, anywhere in the stylesheet: `.section { --spacing-xs: 4px }`, `[--spacing-xs:2px]`, `dark:[--spacing-xs:3px]`, a theme under `[data-theme]`. Inside it `p-xs` is 4px at every width; give the override its own `@variant` and it interpolates between those instead.
+- **Other classes win as in Tailwind.** `p-xs sm:p-0` is 0 from `sm` up, though the variable changes at `md`; `h1 lg:text-sm` follows the variable up to 96px at `md` and then heads for `text-sm`.
+- **Only the root makes a variable responsive.** One that only a component changes per breakpoint (`.card { --pad: 8px; @variant md { --pad: 16px } }`) is read live and steps, as before. That is what keeps Tailwind's own `--tw-*` variables out of it.
+- **Container variants read it live.** In `@md:p-xs` the padding steps when the variable does: a container's width says nothing about the viewport's.
+
+What the plugin cannot see, it cannot copy: see the gotcha above about values set outside the stylesheet.
+
 ## What is and isn't picked up
 
 Every rule that has the specificity of one class (a single class selector, optionally wrapped in `:where()` the way class-based `dark:` is) and sits in at-rules only. So:
 
 - `mt-6`, `md:mt-8`, `xl:text-lg`, `2xl:mt-11`, `min-[900px]:mt-8`: yes, these are the tokens
+- `p-xs`, `mt-(--gap)`, a custom `@utility h1 { font-size: var(--h1) }`, where the root redefines the variable per breakpoint: yes, one token for each of the variable's breakpoints (see above)
 - `@md:mt-8`, `@lg:p-6`: yes, container breakpoints, interpolated over the container (see above)
 - `space-y-4 md:space-y-8`, `space-x-*`: yes, the twins target the same children, at the same zero specificity
 - `dark:mt-10`, `max-md:mt-2`, `print:mt-0`, `@md/card:mt-8` (named container), `supports-[…]:mt-4`: yes, the value becomes the *base* token, under that condition
@@ -211,9 +260,9 @@ A ratio never meets a length. In `text-sm/6 md:text-lg`, `1.5rem` holds up to `m
 
 A single name can be passed as a string anywhere a list is expected (`layers: 'utilities'`, `exclude: 'max-width'`). Anything else the plugin can't use throws when it is created, with a message that names the option: an unknown option, a `minWidth` that isn't a length, an unknown group. The `units` option of 0.4 is gone, and passing it says what replaced it.
 
-Values are copied verbatim once they pass the fence, so the token is still resolved on the element: a per-element `[--spacing:1px]` override applies, as do arbitrary values like `mt-[31px]` and `w-[calc(2rem+3px)]`.
+Values are copied verbatim once they pass the fence, so the token is still resolved on the element: a per-element `[--spacing:1px]` override applies, as do arbitrary values like `mt-[31px]` and `w-[calc(2rem+3px)]`. The one rewrite is a variable the root changes per breakpoint, which is read through its copies.
 
-Breakpoints and cascade layers are discovered from Tailwind's output, not configured: custom `--breakpoint-*` values, one-off `min-[900px]:` variants and Tailwind v3's `min-width:` queries all work, and twins land in whatever layer (or no layer) the originals use.
+Breakpoints and cascade layers are discovered from Tailwind's output, not configured: custom `--breakpoint-*` values, one-off `min-[900px]:` variants and Tailwind v3's `min-width:` queries all work, and twins land in whatever layer (or no layer) the originals use. The breakpoints a root variable changes at count too, whether or not any class uses them.
 
 ## Runtime requirements
 
@@ -237,6 +286,8 @@ Measured on four public Tailwind codebases, built with Tailwind 4.3 and minified
 | cruip open react template | 283 | 68 | 42 → 51 kB (+21%) | 6.1 → 7.1 kB (+16%) |
 | tailwindcss.com | 4544 | 1163 | 448 → 546 kB (+22%) | 44 → 52 kB (+17%) |
 | shadcn/ui monorepo | 2488 | 1129 | 280 → 371 kB (+33%) | 34 → 41 kB (+22%) |
+
+Responsive theme variables add to that only where they are used: one copy per value of each variable a fluid utility reads, one token per breakpoint on each utility that reads it, and one clearing declaration per such breakpoint on the other utilities of that property.
 
 Twins compress well because they repeat selectors and values already in the file. Expect roughly a fifth on top of your CSS over the wire. The numbers need re-measuring on the current version: the defaults now skip percentages, viewport units, transforms, opacity and border widths, which removes twins, while logical properties, `space-*`, line-height ratios and container queries add some.
 
