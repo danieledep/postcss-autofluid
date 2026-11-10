@@ -7,30 +7,57 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
+- Renamed to `postcss-fluidify-breakpoints` (was `postcss-fluid-variants`).
+  The plugin adds no variants; the name now says what it does.
+- The defaults are type and spacing in absolute and font-relative lengths
+  (`px`, `rem`, `em`, …). Percentages, viewport and container units, border
+  and outline widths, transforms and opacity step at their breakpoints as in
+  Tailwind unless opted in with the new `include` option. A responsive value
+  of those kinds is often a switch rather than a scale: an off-canvas drawer
+  (`-translate-x-full lg:translate-x-0`) was half on screen at tablet widths,
+  `opacity-0 md:opacity-100` faded in, and `w-full md:w-1/2` showed 75% wide
+  stacked items. `include: 'all'` restores the previous behaviour.
+- The shared functions are named after their signature (`--fl_k3x9a()`,
+  `--fl_k3x9a-margin-top()`). Two stylesheets on one page that used
+  different breakpoints redefined each other's `--fl()` and wrappers, and
+  the elements of the first fell back to their base value.
+- Options are validated when the plugin is created. A single name is
+  accepted where a list is expected (`layers: 'utilities'` used to become a
+  set of letters), and a number for `minWidth` or `containerMinWidth` is
+  pixels (`320` used to emit an invalid unitless width). Unknown options,
+  unknown `include` groups and widths that aren't lengths throw with a
+  message naming the option; `units` says what replaced it.
+- The source is split into `lib/options.js`, `lib/values.js`,
+  `lib/context.js` and `lib/interpolator.js`.
 - `layers` defaults to `['utilities']` instead of `'auto'`. Tailwind 4 output
   is read exactly as before. Tailwind 3 output, which is unlayered, now needs
   `layers: null` (or `'auto'`, still accepted); the plugin warns when it
   finds responsive values but none of the listed layers.
-- Percentages, viewport units and container units interpolate by default
+- The "nothing was made fluid" warning now points at the first unread
+  declaration, so runners report a file and line.
+
+### Removed
+- The `units` option. `include: ['percentages', 'viewport-units',
+  'container-units']` replaces it.
+
+### Added
+- `include` option: opt-in groups `percentages`, `viewport-units`,
+  `container-units`, `borders`, `transforms`, `opacity`, or `all`.
+- Percentages, viewport units and container units can interpolate
   (`w-12 md:w-1/2`, `w-full md:w-64`, `mt-[2vw]`). `calc()` mixes them with
   other lengths, so the ends of a curve need not share a unit. In an
   auto-height parent a percentage height can't resolve and the whole value
   is auto, so `h-12 md:h-1/2` there is auto below `md` as well.
-
-### Removed
-- The `units` option. Every length unit now interpolates.
-
-### Added
 - `exclude` option: properties to leave out of the fluid list, so one can
   be dropped without restating the other hundred.
-- Border widths (`border-*`, `border-x-*`, `border-s-*`, `divide-x-*`, …),
-  `outline-width` and `outline-offset` are fluid. A multi-value
+- With `borders`, border widths (`border-*`, `border-x-*`, `border-s-*`,
+  `divide-x-*`, …), `outline-width` and `outline-offset` are fluid. A multi-value
   `border-width` splits into its sides or axes.
-- `rotate` interpolates angles; `opacity` and `scale` interpolate ratios,
-  with percentages published as numbers so `opacity-50` (dev) and `.5`
-  (optimized) are one family.
-- Translate and scale interpolate through Tailwind's per-axis variables
-  (`--tw-translate-x`, `--tw-scale-y`, …, and Tailwind 3's `--tw-rotate`),
+- With `transforms` and `opacity`: `rotate` interpolates angles; `opacity`
+  and `scale` interpolate ratios, with percentages published as numbers so
+  `opacity-50` (dev) and `.5` (optimized) are one family.
+- With `transforms`, translate and scale interpolate through Tailwind's
+  per-axis variables (`--tw-translate-x`, `--tw-scale-y`, …, and Tailwind 3's `--tw-rotate`),
   so `scale-100 md:scale-x-150` composes the way Tailwind does. Tokens for
   a variable drop its leading dashes: `--fl-tw-scale-x-48rem`.
 - Logical properties are fluid by default: `margin-inline-start` and the
@@ -48,9 +75,6 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`100cqw`), from `containerMinWidth` (new option, defaults to `minWidth`).
   Outside a container the base value holds.
 
-### Changed
-- The "nothing was made fluid" warning now points at the first unread
-  declaration, so runners report a file and line.
 
 ### Fixed
 - `mt-4 md:mt-8 @md:mt-12` rendered the `md` value where Tailwind renders the

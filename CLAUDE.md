@@ -36,9 +36,14 @@ assembles whatever co-occurs on an element.
   at-rule ancestors (`@layer` included), same relative order. That is what makes
   it win precisely where the original would have won. The only thing stripped is
   the breakpoint media — and only from the token, never from the property.
-- One shared `@function --fl(...)` for the math. One thin `--fl-<prop>()` wrapper
-  per property. One `@property … inherits: false` per *published* token. Size
-  stays near-linear in the number of distinct utilities, not exponential in
+- One shared `@function --fl_<hash>(...)` for the math. One thin
+  `--fl_<hash>-<prop>()` wrapper per property. The hash is of the
+  interpolator's text, so stylesheets with the same breakpoints share names
+  and stylesheets with different ones don't redefine each other (functions are
+  page-global; verified in Chromium 153 that a later `--fl()` with other
+  parameters broke an earlier sheet's elements). Tokens and the
+  `@supports (top: --fl())` check keep plain names. One
+  `@property … inherits: false` per *published* token. Size stays near-linear in the number of distinct utilities, not exponential in
   breakpoints. Twins exist only for properties that have at least one responsive
   value in the build; everything else is untouched. Measured on real codebases
   the appendix is ~75% twins, four base tokens for every responsive one, and
@@ -66,21 +71,34 @@ assembles whatever co-occurs on an element.
   than emit nothing silently. Reading `components` too was measured on four
   real codebases at +0–2 points of size; a fixed component value then curves
   towards a responsive utility on the same element.
+- The default scope is type and spacing: `DEFAULT_PROPERTIES` in
+  `lib/options.js`, and absolute and font-relative `LENGTH_UNITS`. Dan chose
+  this because a responsive value is often a switch, not a scale
+  (`-translate-x-full lg:translate-x-0`, `opacity-0 md:opacity-100`,
+  `w-full md:w-1/2`), and interpolating a switch shows states Tailwind never
+  does. Everything else is an opt-in group in `GROUPS` (`include`):
+  `percentages`, `viewport-units`, `container-units` add units; `borders`,
+  `transforms`, `opacity` add properties; `all` is every group. There is no
+  per-element opt-out by design; `!important` is the documented escape
+  hatch, `exclude` the per-property one.
+- Options are validated in `normalize()` and a bad one throws at creation
+  with a `postcss-fluidify-breakpoints:` prefix. A single string is accepted
+  for any list, a number for a width is px. `units` (removed after 0.4) throws
+  with a pointer to `include`.
 - Only lengths interpolate, plus unitless numbers on `NUMBER_PROPS`
   (`line-height`). `interpolable()` resolves `var()` through root custom
   properties (Tailwind emits used theme variables on `:root, :host`) and the
   rule's own custom properties (`space-y-*` sets `--tw-space-y-reverse`), and
-  accepts arithmetic over `LENGTH_UNITS` (every CSS length, viewport and
-  container units and `%` included) with at least one length. `calc()`
-  mixes them, so the ends of a curve need not share a unit. Keywords, other
-  unitless numbers and unresolvable variables are *fixed*: re-asserted
-  verbatim, never tokenised. There is no `units` option; it was removed in
-  favour of interpolating everything `calc()` can mix.
-- Percentages interpolate everywhere, heights included. Known cost: in an
-  auto-height parent a percentage height (or `top`, `flex-basis`) can't
-  resolve and the whole `calc()` becomes auto, so `h-12 md:h-1/2` there is
-  auto below md where Tailwind keeps 3rem. Dan chose this over keeping `%`
-  fixed on those properties; it is documented in the README.
+  accepts arithmetic over the enabled units with at least one length.
+  `calc()` mixes them, so the ends of a curve need not share a unit.
+  Keywords, units not enabled, other unitless numbers and unresolvable
+  variables are *fixed*: re-asserted verbatim, never tokenised.
+- With `percentages` on, percentages interpolate everywhere, heights
+  included. Known cost: in an auto-height parent a percentage height (or
+  `top`, `flex-basis`) can't resolve and the whole `calc()` becomes auto, so
+  `h-12 md:h-1/2` there is auto below md where Tailwind keeps 3rem. Dan chose
+  this over keeping `%` fixed on those properties; it is documented in the
+  README.
 - Three more value kinds, by property: `RATIO_PROPS` (`opacity`, `scale`,
   `--tw-scale-*`) take numbers and `%` on one channel, with each `N%`
   published as `N/100` (the optimizer turns `opacity: 50%` into `.5`);
@@ -88,7 +106,7 @@ assembles whatever co-occurs on an element.
 - Tailwind composes translate and scale at runtime from per-axis variables
   (`translate: var(--tw-translate-x) var(--tw-translate-y)`), so those
   variables *are* the fluid properties: the twin sets
-  `--tw-scale-x: --fl-tw-scale-x()` and Tailwind's own `scale:` declaration
+  `--tw-scale-x: --fl_<hash>-tw-scale-x()` and Tailwind's own `scale:` declaration
   picks it up. Verified in Chromium: a custom function in a `syntax: "*"`
   variable evaluates on the element. Names drop the leading dashes
   (`slug()`). `isTokenOnly` therefore checks the `--<prefix>-` prefix, not
@@ -122,7 +140,14 @@ assembles whatever co-occurs on an element.
   lone-class rule that sets it, authored CSS included, so this guard is what
   keeps hand-written `padding: 0 20px` from collapsing to `unset`.
 - No dependencies beyond `postcss`. Tests use `node:test`; the browser test
-  skips itself when `playwright` / `@tailwindcss/postcss` are absent.
+  skips itself when `playwright` / `@tailwindcss/postcss` are absent, unless
+  `BROWSER_TEST` is set. CI has a `browser` job that installs them and sets
+  it. The browser test checks every group (`include: 'all'`) and the
+  defaults.
+- Layout: `index.js` is the plugin (walk, channels, stops, twins);
+  `lib/options.js` defaults and validation; `lib/values.js` value
+  classification; `lib/context.js` selector and breakpoint reading;
+  `lib/interpolator.js` the shared function and its name.
 
 ## Things that looked fine and were not (all fixed, all covered by tests)
 

@@ -4,14 +4,14 @@
  *
  * Needs `playwright` (with Chromium 139+) and `@tailwindcss/postcss`, neither
  * of which is a dependency of this package. The test skips itself when they
- * are not installed:
+ * are not installed (unless BROWSER_TEST is set, as on CI, where a missing tool fails the run):
  *
  *   npm i -D playwright @tailwindcss/postcss tailwindcss && npx playwright install chromium
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import postcss from 'postcss'
-import fluidVariants from '../index.js'
+import fluidify from '../index.js'
 
 const optional = async (name) => import(name).catch(() => null)
 const playwright = await optional('playwright')
@@ -112,16 +112,20 @@ const read = (PROP) =>
     [...document.querySelectorAll('[id]')].map((el) => {
       const cs = getComputedStyle(el)
       // A percentage stays in the computed translate, so read where it lands.
-      if (PROP[el.id] === 'ty') return [el.id, `${Math.round((el.getBoundingClientRect().top - el.offsetTop) * 100) / 100}px`]
+      // offsetTop is rounded to whole pixels, so the difference is too.
+      if (PROP[el.id] === 'ty') return [el.id, `${Math.round(el.getBoundingClientRect().top - el.offsetTop)}px`]
       return [el.id, cs[PROP[el.id] ?? 'marginTop']]
     }),
   )
 
-for (const optimize of [false, true]) test(`computed styles match Tailwind at breakpoints and interpolate between them (${optimize ? 'optimized' : 'dev'} output)`, { skip: !(playwright && tailwind) && 'playwright or @tailwindcss/postcss not installed' }, async () => {
+for (const optimize of [false, true]) test(`computed styles match Tailwind at breakpoints and interpolate between them (${optimize ? 'optimized' : 'dev'} output)`, { skip: !(playwright && tailwind) && !process.env.BROWSER_TEST && 'playwright or @tailwindcss/postcss not installed' }, async () => {
   const source = `@import "tailwindcss"; @source inline("${classes.join(' ')}"); ${utilities}`
   // Production builds run Tailwind's optimizer, which rewrites values (calc(var(--spacing) * 0) → 0).
   const plain = (await postcss([tailwind.default({ optimize })]).process(source, { from: 'app.css' })).css
-  const fluid = (await postcss([fluidVariants()]).process(plain, { from: undefined })).css
+  // Every opt-in group on, so each kind of value is checked against Chromium.
+  const fluid = (await postcss([fluidify({ include: 'all' })]).process(plain, { from: undefined })).css
+  // The defaults: type and spacing only.
+  const defaults = (await postcss([fluidify()]).process(plain, { from: undefined })).css
 
   const browser = await launch()
   try {
@@ -204,7 +208,22 @@ for (const optimize of [false, true]) test(`computed styles match Tailwind at br
     assert.equal(mid.q1, '45deg')
     assert.equal(mid.q2, '16.5deg') // -12deg → 45deg
     assert.equal(mid.op1, '0.6') // 20% → 100%
-    assert.equal(mid.op2, '0.5') // .2 → 80%: a number and a percentage meet // 48px → 50vh of a 400px-tall viewport
+    assert.equal(mid.op2, '0.5') // .2 → 80%: a number and a percentage meet
+
+    // With the defaults, everything outside type and spacing steps exactly
+    // like Tailwind at every width, while lengths still interpolate.
+    const optIn = ['w1', 'u1', 'u2', 'u3', 'u4', 'u5', 'b1', 'b2', 'dv', 'o1', 'o2', 't1', 't2', 'k1', 'k2', 'k3', 'q1', 'q2', 'op1', 'op2']
+    for (const width of [320, 544, 767, 768, 900, 1100, 1536]) {
+      const fl = await at(width, defaults)
+      const pl = await at(width, plain)
+      for (const id of optIn) assert.equal(fl[id], pl[id], `${id} at ${width}px with the defaults`)
+    }
+    const dmid = await at(544, defaults)
+    assert.equal(dmid.a, '28px')
+    assert.equal(dmid.r1, '10px')
+    // w-full is a wall below md; from md the two lengths still curve: 256px → 384px
+    assert.equal((await at(544, defaults)).w2, (await at(544, plain)).w2)
+    assert.equal((await at(900, defaults)).w2, '322px')
   } finally {
     await browser.close()
   }
