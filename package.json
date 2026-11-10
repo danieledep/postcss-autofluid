@@ -5,10 +5,10 @@
   "homepage": "https://danieledep.github.io/fluid-variants-site/",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/danieledep/postcss-fluid-variants.git"
+    "url": "git+https://github.com/danieledep/postcss-autofluid.git"
   },
   "bugs": {
-    "url": "https://github.com/danieledep/postcss-fluid-variants/issues"
+    "url": "https://github.com/danieledep/postcss-autofluid/issues"
   },
   "exports": "./index.js",
   "files": [
