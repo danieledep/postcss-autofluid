@@ -383,9 +383,11 @@ test('with borders opted in, splits border widths into their sides and axes', as
     @media (width >= 48rem) { .md\\:border-8 { border-width: 8px } .md\\:border-y-4 { border-block-width: 4px } .md\\:border-s-4 { border-inline-start-width: 4px } }`
   const out = flat(await appendix(css, { include: 'borders' }))
   assert.match(out, /\.border-2 \{ --fl-border-width-0: 2px; border-width: --fl-border-width\(\); \}/)
-  // only the longhands with a responsive value anywhere get tokens
-  assert.match(out, /\.border-\\\[1px_2px\\\] \{ --fl-border-block-width-0: 1px; border-block-width: --fl-border-block-width\(\); \}/)
-  assert.match(out, /\.border-x-2 \{ --fl-border-inline-start-width-0: 2px; border-inline-start-width: --fl-border-inline-start-width\(\); \}/)
+  // only the longhands with a responsive value anywhere get tokens; the others
+  // are re-asserted, since the `border-width` twin of another class would
+  // otherwise override them
+  assert.match(out, /\.border-\\\[1px_2px\\\] \{ --fl-border-block-width-0: 1px; border-block-width: --fl-border-block-width\(\); border-inline-width: 2px; \}/)
+  assert.match(out, /\.border-x-2 \{ --fl-border-inline-start-width-0: 2px; border-inline-start-width: --fl-border-inline-start-width\(\); border-inline-end-width: 4px; \}/)
   assert.match(out, /\.md\\:border-y-4 \{ --fl-border-block-width-48rem: 4px; \}/)
 })
 

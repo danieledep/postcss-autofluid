@@ -27,15 +27,17 @@
  *   lib/options.js       defaults, opt-in groups, validation
  *   lib/values.js        what a value is: length, ratio, angle or fixed
  *   lib/context.js       where a declaration sits: rule, at-rules, breakpoint
+ *   lib/variables.js     root variables that change at a breakpoint
  *   lib/interpolator.js  the shared @function
  */
 
 const { NAME, normalize } = require('./lib/options.js')
 const {
   ZERO, NUMBER_PROPS, RATIO_PROPS, PERCENT, ANGLE_PROPS, ANGLE_UNITS,
-  components, themeOf, interpolable, numeric, ratio,
+  components, footprint, themeOf, resolve, interpolable, numeric, ratio,
 } = require('./lib/values.js')
 const { UTILITY, MIN_WIDTH, BASE, contextOf } = require('./lib/context.js')
+const { variablesOf } = require('./lib/variables.js')
 const { interpolator, signature } = require('./lib/interpolator.js')
 
 function autofluid(options) {
@@ -49,6 +51,9 @@ function autofluid(options) {
   // Set under a container query that sets a value for the property: the
   // container decides, as Tailwind's later-sorted `@` variants do.
   const inContainer = (prop) => `--${prefix}-${slug(prop)}-cq`
+  // A root variable's value at a breakpoint: `--h1` is copied to `--fl--h1-48rem`.
+  // The doubled dash keeps the copies clear of every token name.
+  const copy = (variable, key) => `--${prefix}-${variable.slice(1)}-${key}`
 
   return {
     postcssPlugin: NAME,
@@ -77,20 +82,25 @@ function autofluid(options) {
       }
 
       const theme = themeOf(root)
+      const variables = variablesOf(root, theme, copy)
 
       // A rule's own custom properties are known for its declarations:
       // `space-y-*` multiplies by `--tw-space-y-reverse`, which the same rule
       // sets to 0 (`space-y-reverse` flips it to 1 at runtime, still a number).
+      // `at` is the root theme they are read on top of.
       const scopes = new WeakMap()
-      const varsOf = (rule) => {
+      const varsOf = (rule, at = theme) => {
         if (!scopes.has(rule)) {
-          let local = null
+          const local = []
           rule.each((n) => {
-            if (n.type === 'decl' && n.prop.startsWith('--')) (local ??= new Map(theme)).set(n.prop, n.value.trim())
+            if (n.type === 'decl' && n.prop.startsWith('--')) local.push([n.prop, n.value.trim()])
           })
-          scopes.set(rule, local ?? theme)
+          scopes.set(rule, { local, known: new Map() })
         }
-        return scopes.get(rule)
+        const { local, known } = scopes.get(rule)
+        if (!local.length) return at
+        if (!known.has(at)) known.set(at, new Map([...at, ...local]))
+        return known.get(at)
       }
 
       // Which token family a value joins: the property's own for lengths,
@@ -101,6 +111,21 @@ function autofluid(options) {
         if (ANGLE_PROPS.has(prop)) return interpolable(value, vars, ANGLE_UNITS) ? prop : null
         if (interpolable(value, vars, units)) return prop
         return NUMBER_PROPS.has(prop) && numeric(value, vars) ? `${prop}-num` : null
+      }
+
+      // A value that reads a responsive root variable says something at every
+      // breakpoint the variable changes at, as if the utility held a variant
+      // for each: `font-size: var(--h1)` is one token here and one `ahead` at
+      // each breakpoint above, all reading the variable's copy for that width
+      // (`text`). Only when the value is of one kind throughout: a variable
+      // that is a length here and a keyword there is a switch, and steps as
+      // it always did. Container tokens stay live too, since a container's
+      // width says nothing about the viewport's.
+      const stepsOf = (entry, scope, width) => {
+        const widths = entry.channel && width.axis !== 'cq' ? variables.widthsOf(entry.value, width) : []
+        const steps = widths.map((step) => ({ ...entry, step, vars: varsOf(scope, variables.themeAt(step)) }))
+        if (!steps.length || steps.some((s) => channelOf(s.prop, s.value, s.vars) !== entry.channel)) return [entry]
+        return steps.map((s) => ({ ...s, text: variables.at(s.value, s.step), ahead: s.step !== width }))
       }
 
       // Declarations that share a selector and an at-rule chain become one
@@ -124,7 +149,9 @@ function autofluid(options) {
         const split = components(prop, value.trim())
         const kept = !split || split.some(([name]) => !fluidable.has(name))
           ? [{ prop, value, source, vars, channel: null }]
-          : split.map(([name, part]) => ({ prop: name, value: part, source, vars, channel: channelOf(name, part, vars) }))
+          : split.flatMap(([name, part]) =>
+              stepsOf({ prop: name, value: part, source, vars, channel: channelOf(name, part, vars) }, node.parent, context.width),
+            )
 
         for (const selector of rule.selectors) {
           if (!UTILITY.test(selector)) continue
@@ -143,11 +170,17 @@ function autofluid(options) {
       // nothing to interpolate towards, so it needs no twins at all.
       const channels = new Map()
       for (const { width, decls } of found) {
-        if (width === BASE) continue
-        for (const { prop, channel } of decls) if (channel) channels.set(channel, prop)
+        for (const { prop, channel, step = width } of decls) if (channel && step !== BASE) channels.set(channel, prop)
       }
       const channelsOf = new Map()
       for (const [channel, prop] of channels) channelsOf.set(prop, [...(channelsOf.get(prop) ?? []), channel])
+
+      // Twins come after everything Tailwind wrote, so the twin of `p-4`
+      // would override `pt-2`, which Tailwind sorts after it, unless `pt-2`
+      // has a twin too. Whatever shares a side with a fluid property gets
+      // one, re-asserting its value as written.
+      const taken = new Set([...channelsOf.keys()].flatMap(footprint))
+      const familiesOf = (prop) => channelsOf.get(prop) ?? (footprint(prop).some((part) => taken.has(part)) ? [] : null)
 
       if (!channels.size) {
         // Nothing matched. If the stylesheet plainly carries responsive values
@@ -201,21 +234,32 @@ function autofluid(options) {
       // A value of the other kind (a ratio where lengths interpolate, or the
       // reverse) is a wall for that family in the same way. A fixed base
       // value needs none — nothing interpolates below the base.
+      //
+      // A token published ahead needs neither: the rule it comes from holds
+      // the property from its own breakpoint up. But it sits at that rule's
+      // place in the cascade, before every variant, where a real variant's
+      // token would sit after the ones below it. `p-xs sm:p-0` must stay 0
+      // at md, though `--spacing-xs` changes there. So `early` lists those
+      // tokens by family, and every rule that speaks for the family at or
+      // below one of them clears it (see the twins): the rules after the
+      // one that published it then win it, as they win the property.
       const widths = new Map()
       const stopKeys = new Set()
       const published = new Set()
+      const early = new Map()
       for (const { width, decls } of found) {
-        for (const { prop, channel } of decls) {
+        for (const { prop, channel, step = width, ahead } of decls) {
           for (const own of channelsOf.get(prop) ?? []) {
             if (own === channel) {
-              published.add(token(own, width.key))
-              if (width.axis === 'cq') published.add(inContainer(own))
+              published.add(token(own, step.key))
+              if (step.axis === 'cq') published.add(inContainer(own))
+              if (ahead) early.set(own, (early.get(own) ?? new Map()).set(token(own, step.key), step.px))
             } else {
-              if (width === BASE) continue
-              stopKeys.add(width.key)
-              published.add(stop(own, width.key))
+              if (step === BASE || ahead) continue
+              stopKeys.add(step.key)
+              published.add(stop(own, step.key))
             }
-            if (width !== BASE) widths.set(width.key, width)
+            if (step !== BASE) widths.set(step.key, step)
           }
         }
       }
@@ -303,23 +347,34 @@ function autofluid(options) {
       for (const { selector, source, width, ancestors, conditions, decls } of found) {
         const tokens = []
         const values = []
-        for (const { prop, value, channel, source, vars } of decls) {
-          const own = channelsOf.get(prop)
+        const held = new Map()
+        for (const { prop, value, channel, source, vars, step = width, text, ahead } of decls) {
+          const own = familiesOf(prop)
           if (!own) continue
-          if (width !== BASE) {
+          if (width !== BASE && !ahead) {
             for (const other of own) if (other !== channel) tokens.push(decl(stop(other, width.key), '1', source))
           }
           if (own.includes(channel)) {
-            const published = RATIO_PROPS.has(prop)
-              ? ratio(value, vars)
-              : channel === prop && ZERO.test(value)
-                ? ANGLE_PROPS.has(prop) ? '0deg' : '0px'
-                : value
-            tokens.push(decl(token(channel, width.key), published, source))
+            // A zero behind a variable is as bare as a written one
+            // (`--spacing-none: 0`), where the variable is that everywhere:
+            // one that is set again somewhere may be a length there, and
+            // stays live.
+            const zero = channel === prop && (text || variables.constant(value)) && ZERO.test(resolve(value, vars) ?? '')
+            const published = RATIO_PROPS.has(prop) ? ratio(value, vars) : zero ? (ANGLE_PROPS.has(prop) ? '0deg' : '0px') : text ?? value
+            tokens.push(decl(token(channel, step.key), published, source))
+            if (ahead) continue
             if (width.axis === 'cq') values.push(decl(inContainer(channel), '1', source))
+            else held.set(channel, source)
             values.push(decl(prop, `${wrapper(channel)}()`, source))
           } else {
             values.push(decl(prop, value, source))
+          }
+        }
+        // This rule speaks for the family from its breakpoint up: whatever an
+        // earlier rule published ahead of itself from there on no longer holds.
+        for (const [channel, source] of held) {
+          for (const [name, px] of early.get(channel) ?? []) {
+            if (px >= width.px && !tokens.some((t) => t.prop === name)) tokens.push(decl(name, 'initial', source))
           }
         }
 
@@ -329,6 +384,28 @@ function autofluid(options) {
           groupFor(ancestors).append(new Rule({ selector, nodes: values, source }))
         } else if (tokens.length || values.length) {
           groupFor(ancestors).append(new Rule({ selector, nodes: [...tokens, ...values], source }))
+        }
+      }
+
+      // ── The copies of responsive root variables, where their originals sit ─
+      // Same selectors, same wrappers, same order, minus the breakpoint: the
+      // cascade then settles each copy the way it settles the variable at
+      // that width (see lib/variables.js). Nothing reads a copy but the
+      // tokens, so where these sit among the twins does not matter, only
+      // among themselves.
+      for (const { node, chain, copies } of variables.copies()) {
+        let parent = supports
+        for (const { type, selector, name, params, source } of chain) {
+          const last = parent.last
+          const same = last?.type === type && (type === 'rule' ? last.selector === selector : last.name === name && last.params === params)
+          if (!same) parent.append(type === 'rule' ? new Rule({ selector, source, nodes: [] }) : new AtRule({ name, params, source, nodes: [] }))
+          parent = parent.last
+        }
+        for (const [prop, value] of copies) {
+          // Two declarations that differed only by breakpoint now share a
+          // rule, where the later one wins outright.
+          if (!node.important) parent.each((earlier) => { if (earlier.prop === prop && !earlier.important) earlier.remove() })
+          parent.append(new Declaration({ prop, value: value ?? 'initial', important: node.important, source: node.source }))
         }
       }
 

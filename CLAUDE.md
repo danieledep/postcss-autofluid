@@ -139,6 +139,57 @@ assembles whatever co-occurs on an element.
   (`border-radius`) keeps its literal value. Any property in the set twins every
   lone-class rule that sets it, authored CSS included, so this guard is what
   keeps hand-written `padding: 0 20px` from collapsing to `unset`.
+- A root variable redefined per breakpoint (`:root { --h1: 64px; @variant md
+  { --h1: 96px } }`) makes the utilities that read it fluid, without the
+  variable itself changing. Dan chose this over interpolating the variable
+  on `:root`, which would reach every reader of it and so lose the property
+  fence (`translate-x-(--my-var)`, `grid-cols-(--columns)`). The fluid
+  declaration gets a token for its own breakpoint and one *ahead* for each
+  breakpoint above where a variable it reads changes; the tokens read
+  *copies* of the variable, `--fl--h1-48rem` (doubled dash: clear of every
+  token name). `lib/variables.js` holds the rules:
+  - Only the root makes a variable responsive: a base value there plus
+    either a value under a breakpoint or one that reads a responsive
+    variable (aliases, to a fixed point). Not any rule: Tailwind's `--tw-*`
+    variables are set under `md:` on utilities all the time, and
+    `var(--tw-leading, …)` must stay live.
+  - A copy mirrors its declaration (selectors, nesting, wrappers, order,
+    `!important`) minus the breakpoint, so the cascade settles copies as it
+    settles the variable. Every declaration of a copied variable is copied,
+    anywhere in the stylesheet, which is what makes
+    `.section { --h1: 40px }` hold. Nothing inside `@keyframes`,
+    `@function` or other non-wrapper at-rules: a copy would redefine them.
+  - A declaration sets the copy at its own breakpoint, and at each one
+    above where a variable it reads changes, and clears (`initial`) the
+    rest above. A cleared copy makes the token that reads it invalid: no
+    token, straight line. Setting every copy above to the same value
+    instead was tried first and is simpler, but then a breakpoint only one
+    scope uses (`sm:[--h1:40px]`) put a knot in every other heading's curve.
+  - A value reading one variable at one of its breakpoints reads that copy
+    alone. Between its breakpoints (`lg:p-xs`), or with several variables,
+    each falls back through its copies below (`var(--c-48rem, var(--c-0))`)
+    so the token always stands; otherwise an override that clears a copy
+    takes the token with it and the value at that breakpoint is wrong.
+  - Only copies some token reads are emitted (`used`, closed over aliases).
+  - Everything else stays live and steps as in Tailwind: a value that
+    changes kind between breakpoints, container tokens, non-fluid
+    properties, variables only non-root rules change. Fail towards plain
+    Tailwind, never towards a guess.
+  - What the stylesheet does not contain cannot be copied: inline styles,
+    JS, separately built stylesheets. Documented in the README gotchas.
+- Tokens published ahead sit at their rule's place in the cascade, before
+  every variant, so a later rule would not override them the way it
+  overrides the property: `p-xs sm:p-0` came back to 16px at md. Every twin
+  that hands over a family therefore clears (`initial`) the ahead tokens of
+  that family at or above its breakpoint that it does not set itself
+  (`early` in `index.js`). Keywords need none (they take the property) and
+  container twins none (`--cq` picks the axis). Builds without responsive
+  variables have no ahead tokens and their output is unchanged.
+- Twins come after all of Tailwind, so the twin of a shorthand overrides a
+  longhand original sorted after it (`p-4 pt-2`). `footprint()` in
+  `lib/values.js` names the sides, axes and corners a property sets; any
+  rule whose property shares one with a fluid property gets a twin that
+  re-asserts its value, fluid or not.
 - No dependencies beyond `postcss`. Tests use `node:test`; the browser test
   skips itself when `playwright` / `@tailwindcss/postcss` are absent, unless
   `BROWSER_TEST` is set. CI has a `browser` job that installs them and sets
@@ -147,6 +198,7 @@ assembles whatever co-occurs on an element.
 - Layout: `index.js` is the plugin (walk, channels, stops, twins);
   `lib/options.js` defaults and validation; `lib/values.js` value
   classification; `lib/context.js` selector and breakpoint reading;
+  `lib/variables.js` responsive root variables and their copies;
   `lib/interpolator.js` the shared function and its name.
 
 ## Things that looked fine and were not (all fixed, all covered by tests)
@@ -205,6 +257,20 @@ computed styles against plain Tailwind at a dozen widths:
   pill a few pixels above the base in production only. Lengths of `1e6` units
   or more (`HUGE`) are fixed.
 
+- `p-4 pt-2` rendered 16px on top in any build with a responsive `padding`
+  and no responsive `padding-top`: `.pt-2` had no twin, and the twin of
+  `.p-4`, appended after everything, overrode it. On main this hid behind
+  real codebases having most longhands responsive somewhere. Hence
+  `footprint()`.
+- `--spacing-none: 0` as a token is `var(--spacing-none)`, which passed the
+  written-zero check, and `calc(12px + (0 - 12px) * …)` is invalid:
+  `p-xs md:p-none` had no padding below md. A zero is now looked for behind
+  variables too, but only ones declared once, on the root: `--header: 0`
+  that a layout class sets to `64px` must stay live.
+- With responsive variables, `p-xs sm:p-0` returned to 16px at md and
+  `mt-(--pad) md:mt-0` to 96px at lg (the variable's values, published
+  ahead by the earlier rule). Hence the clearing of ahead tokens.
+
 ## Runtime assumptions — verified in Chromium 141 (and 153 for the stop tokens)
 
 1. An unset `var(--x)` passed as a `@function` argument yields a
@@ -224,11 +290,27 @@ computed styles against plain Tailwind at a dozen widths:
    number interpolates through the same `calc()` as a length. esbuild,
    Lightning CSS and cssnano keep this output intact too.
 
+8. Verified in Chromium 153: `initial` on a registered `syntax: "*"` token
+   makes it guaranteed-invalid again, so `style(--param)` is false as for an
+   unset one; a token whose `var()` reads a cleared (or missing) copy is
+   invalid the same way; an unregistered copy that reads another copy is
+   resolved where it is declared and inherits resolved, exactly like the
+   alias it copies.
+
 ## Known trade-off
 
 An element with both viewport and container tokens for one property is right
 at every breakpoint, but steps into the container value instead of bending
 towards it: the two curves run over different widths.
+
+A value that reads several responsive variables always has a token at each of
+their breakpoints, cleared copies or not, so inside a scope that overrides
+one of them the curve can hold flat up to a breakpoint instead of running
+straight through it. Right at every breakpoint; only the shape differs.
+
+`max-md:p-xs` bends towards the variable's md value below md, though the
+class is off from md up: the ahead token is published under the rule's
+condition, and a condition is not read for what it excludes.
 
 ## Semantics worth knowing
 

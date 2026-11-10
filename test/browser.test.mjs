@@ -228,3 +228,183 @@ for (const optimize of [false, true]) test(`computed styles match Tailwind at br
     await browser.close()
   }
 })
+
+/**
+ * Root variables redefined per breakpoint, the way a design-token export
+ * writes them: the base in `@theme`, each breakpoint as a `@variant` on
+ * `:root`. Utilities that read them interpolate; everything else that reads
+ * them, and every way Tailwind lets another class or scope override them,
+ * must still land where plain Tailwind does.
+ */
+const tokens = `
+  @custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+  @theme static {
+    --spacing: 1px;
+    --layout-columns: 4; --layout-section-padding: 48px;
+    --spacing-none: 0; --spacing-xs: 12px; --spacing-sm: 16px; --spacing-md: 24px;
+    --typography-h1: 64px; --typography-body: 18px;
+    --input-padding-x: var(--spacing-xs); --input-padding-2x: calc(var(--input-padding-x) * 2);
+    --switch: 16px; --leading: 1.5; --tight: 1; --shrink: 16px; --fade: 0.2; --turn: 0deg; --header: 0; --px-unit: 10px;
+  }
+  @layer theme {
+    :root {
+      @variant md {
+        --layout-columns: 8; --layout-section-padding: 72px; --spacing-xs: 16px; --spacing-sm: 24px; --spacing-md: 32px;
+        --typography-h1: 96px; --typography-body: 20px;
+        --switch: auto; --leading: 24px; --tight: 2; --shrink: 0; --fade: 1; --turn: 90deg;
+      }
+      @variant lg { --layout-columns: 12; --layout-section-padding: 96px; --typography-h1: 140px; }
+    }
+    @media (min-width: 768px) { :root { --px-unit: 30px; } }
+    [data-theme=alt] { --typography-h1: 50px; }
+    .has-header { --header: 64px; }
+  }
+  @utility h1 { font-size: var(--typography-h1); line-height: 1.1; }
+  @layer components {
+    .section { --spacing-xs: 5px; }
+    .compact { --spacing-xs: 4px; --typography-h1: 30px; @variant xl { --spacing-xs: 6px; } @variant sm { --typography-h1: 40px; } }
+  }
+`
+
+// id: [classes, computed property]
+const tokenCases = {
+  h1: ['h1', 'fontSize'], body: ['text-(length:--typography-body)', 'fontSize'],
+  pxs: ['p-xs', 'paddingTop'], neg: ['-mt-xs', 'marginTop'], gap: ['grid gap-md', 'rowGap'], w: ['w-(--layout-section-padding)', 'width'],
+  alias: ['px-(--input-padding-x)', 'paddingLeft'], alias2: ['p-(--input-padding-2x)', 'paddingTop'],
+  sum: ['mt-[calc(var(--spacing-xs)+var(--layout-section-padding))]', 'marginTop'], fallback: ['mt-[var(--unset,var(--spacing-xs))]', 'marginTop'],
+  // another class takes over at a breakpoint: below, at or above one of the variable's
+  smp0: ['p-xs sm:p-0', 'paddingTop'], mdmt0: ['mt-(--layout-section-padding) md:mt-0', 'marginTop'], xlmt0: ['mt-(--layout-section-padding) xl:mt-0', 'marginTop'],
+  h1sm: ['h1 text-sm', 'fontSize'], h1md: ['h1 md:text-sm', 'fontSize'], h1lg: ['h1 lg:text-sm', 'fontSize'],
+  mdp: ['p-4 md:p-(--layout-section-padding)', 'paddingTop'], lgp: ['p-0 lg:p-xs', 'paddingTop'],
+  pxspt: ['p-xs pt-4', 'paddingTop'], mxsmb: ['m-xs mb-4', 'marginBottom'], pxspx: ['p-xs md:px-0', 'paddingLeft'], imp: ['p-xs p-4!', 'paddingTop'], p4: ['p-4', 'paddingTop'],
+  darkp: ['p-xs dark:p-4', 'paddingTop'], maxmd: ['max-md:p-xs', 'paddingTop'],
+  // zeros
+  none: ['p-none md:p-xs', 'paddingTop'], tonone: ['p-xs md:p-none', 'paddingTop'], shrink: ['p-(--shrink)', 'paddingTop'], header: ['pt-(--header)', 'paddingTop'],
+  // not a scale: these step exactly like Tailwind
+  cols: ['grid grid-cols-(--layout-columns)', 'gridTemplateColumns'], switch: ['mt-(--switch)', 'marginTop'], leading: ['leading-(--leading)', 'lineHeight'],
+  // numbers interpolate with numbers; opt-in groups follow their variables once opted in
+  tight: ['leading-(--tight)', 'lineHeight'], tx: ['translate-x-(--spacing-sm)', 'translate'], fade: ['opacity-(--fade)', 'opacity'], turn: ['rotate-(--turn)', 'rotate'],
+  self: ['p-xs [--spacing-xs:2px]', 'paddingTop'], px: ['mt-(--px-unit) md:mt-2', 'marginTop'], px2: ['mt-(--px-unit) lg:mt-2', 'marginTop'],
+}
+
+const tokenHtml = `
+  ${Object.entries(tokenCases).map(([id, [cls]]) => `<div id="${id}" class="${cls}">x</div>`).join('\n  ')}
+  <div class="section"><p id="scoped" class="p-xs">x</p><p id="scopedalias" class="px-(--input-padding-x)">x</p><p id="scopedlg" class="p-0 lg:p-xs">x</p></div>
+  <div class="[--spacing-xs:2px]"><p id="arbitrary" class="p-xs">x</p></div>
+  <div class="compact"><p id="compact" class="p-xs">x</p><p id="compacth1" class="h1">x</p></div>
+  <div data-theme="alt"><p id="themed" class="h1">x</p></div>
+  <div data-theme="dark"><div class="dark:[--spacing-xs:3px]"><p id="dark" class="p-xs">x</p></div><p id="darkp2" class="p-xs dark:p-4">x</p></div>
+  <div class="dark:[--spacing-xs:3px]"><p id="light" class="p-xs">x</p></div>
+  <div class="has-header"><p id="header2" class="pt-(--header)">x</p><p id="header3" class="pt-(--header) md:pt-4">x</p></div>
+  <div class="space-y-xs"><p id="space">a</p><p>b</p></div>
+  <div class="@container" style="width: 50%"><p id="cq" class="p-0 @md:p-xs">x</p></div>
+`
+const TOKEN_PROP = {
+  ...Object.fromEntries(Object.entries(tokenCases).map(([id, [, prop]]) => [id, prop])),
+  scopedalias: 'paddingLeft', compacth1: 'fontSize', themed: 'fontSize', space: 'marginBottom',
+}
+const tokenClasses = [...new Set([...tokenHtml.matchAll(/class="([^"]*)"/g)].flatMap((m) => m[1].split(/\s+/)))]
+
+for (const optimize of [false, true]) test(`utilities that read responsive root variables interpolate, and nothing else changes (${optimize ? 'optimized' : 'dev'} output)`, { skip: !(playwright && tailwind) && !process.env.BROWSER_TEST && 'playwright or @tailwindcss/postcss not installed' }, async () => {
+  const source = `@import "tailwindcss" source(none); @source inline("${tokenClasses.join(' ')}"); ${tokens}`
+  const plain = (await postcss([tailwind.default({ optimize })]).process(source, { from: 'app.css' })).css
+  const fluid = (await postcss([autofluid()]).process(plain, { from: undefined })).css
+  const all = (await postcss([autofluid({ include: 'all' })]).process(plain, { from: undefined })).css
+
+  const browser = await launch()
+  try {
+    const page = await browser.newPage()
+    const at = async (width, css) => {
+      await page.setViewportSize({ width, height: 400 })
+      await page.setContent(`<!doctype html><style>${css}</style>${tokenHtml}`)
+      return page.evaluate((PROP) => Object.fromEntries([...document.querySelectorAll('[id]')].map((el) => [el.id, getComputedStyle(el)[PROP[el.id] ?? 'paddingTop']])), TOKEN_PROP)
+    }
+    const ids = Object.keys(await at(320, plain))
+    const except = (...skip) => ids.filter((id) => !skip.includes(id))
+
+    // At the base and above the last breakpoint, everything is plain Tailwind.
+    for (const width of [320, 1536]) assert.deepEqual(await at(width, fluid), await at(width, plain), `at ${width}px`)
+
+    // At each breakpoint, so is every element that says something there. The
+    // others are on their way to a breakpoint further up.
+    const between = { 640: except('h1', 'body', 'pxs', 'neg', 'gap', 'w', 'alias', 'alias2', 'sum', 'fallback', 'mdmt0', 'xlmt0', 'h1md', 'h1lg', 'mdp', 'lgp', 'pxspx', 'darkp', 'maxmd', 'none', 'tonone', 'shrink', 'tight', 'px', 'px2', 'scopedalias', 'scopedlg', 'compact', 'light', 'header3', 'space'), 768: except('lgp', 'scopedlg', 'compact', 'cq'), 1024: except('compact'), 1280: ids }
+    for (const [width, said] of Object.entries(between)) {
+      const fl = await at(+width, fluid)
+      const pl = await at(+width, plain)
+      for (const id of said) assert.equal(fl[id], pl[id], `${id} at ${width}px`)
+    }
+
+    // What steps in Tailwind steps here, at every width: a property that is
+    // not fluid, a variable that changes kind, an override in any scope, a
+    // class that wins the property outright.
+    const stepped = ['cols', 'switch', 'leading', 'tx', 'fade', 'turn', 'self', 'h1sm', 'pxspt', 'mxsmb', 'imp', 'p4', 'header', 'header2', 'scoped', 'arbitrary', 'themed', 'dark', 'darkp2']
+    for (const width of [400, 544, 700, 767, 900, 1100, 1300]) {
+      const fl = await at(width, fluid)
+      const pl = await at(width, plain)
+      for (const id of stepped) assert.equal(fl[id], pl[id], `${id} at ${width}px`)
+    }
+
+    // Halfway to md (20rem → 48rem), each reader is halfway between the variable's two values.
+    const mid = await at(544, fluid)
+    assert.equal(mid.h1, '80px') // 64px → 96px
+    assert.equal(mid.body, '19px') // 18px → 20px
+    assert.equal(mid.pxs, '14px') // 12px → 16px
+    assert.equal(mid.neg, '-14px') // calc(var(--spacing-xs) * -1)
+    assert.equal(mid.gap, '28px') // 24px → 32px
+    assert.equal(mid.w, '60px') // 48px → 72px
+    assert.equal(mid.alias, '14px') // --input-padding-x: var(--spacing-xs)
+    assert.equal(mid.alias2, '28px') // an alias of the alias, doubled
+    assert.equal(mid.sum, '74px') // two variables: 60px → 88px
+    assert.equal(mid.fallback, '14px') // var(--unset, var(--spacing-xs))
+    assert.equal(mid.space, '14px') // space-y-xs, on the children
+    assert.equal(mid.tight, `${1.5 * 16}px`) // a number: 1 → 2 times the 16px font size
+    assert.equal(mid.none, '8px') // --spacing-none: 0 → 16px
+    assert.equal(mid.tonone, '6px') // 12px → 0
+    assert.equal(mid.shrink, '8px') // a variable that is 0 at md: 16px → 0
+    assert.equal(mid.mdmt0, '24px') // 48px → md:mt-0
+    assert.equal(mid.mdp, '38px') // p-4 → the variable's md value, 72px
+    assert.equal(mid.px, '6px') // 10px → md:mt-2 (2px here), though the variable's query is in px
+    assert.equal(mid.scopedalias, '14px') // the alias was computed on the root, as in Tailwind
+    assert.equal(mid.light, '14px') // dark:[--spacing-xs:3px] outside dark
+    assert.equal(mid.header3, '34px') // a variable the root never changes stays live: 64px → md:pt-4 (4px here)
+
+    // Between md and lg only what changes at lg moves.
+    const upper = await at(896, fluid)
+    assert.equal(upper.h1, '118px') // 96px → 140px
+    assert.equal(upper.w, '84px') // 72px → 96px
+    assert.equal(upper.mdp, '84px') // md:p-(--layout-section-padding) follows it up
+    assert.equal(upper.sum, '100px') // 88px → 112px
+    assert.equal(upper.pxs, '16px') // --spacing-xs has nothing above md
+    assert.equal(upper.h1lg, '55px') // 96px → lg:text-sm 14px
+
+    // A class that takes over below the variable's breakpoint keeps it from
+    // there up: `p-xs sm:p-0` is 0 from sm, not on its way back to 16px.
+    for (const width of [640, 700, 768, 900, 1024]) assert.equal((await at(width, fluid)).smp0, '0px', `smp0 at ${width}px`)
+    assert.equal((await at(480, fluid)).smp0, '6px') // 12px → 0 at sm
+    // …and one that takes over above it lets the variable run until then.
+    const xl = await at(1152, fluid)
+    assert.equal(xl.xlmt0, '48px') // 96px at lg → xl:mt-0
+    assert.equal(xl.scopedlg, '5px') // lg:p-xs inside .section, which says nothing at md: its base value
+    assert.ok(Math.abs(parseFloat(xl.compact) - 5.733) < 0.01, `compact ${xl.compact}`) // .compact sets it at xl only: 4px → 6px from the base, straight through md
+
+    // A breakpoint that only one scope uses is that scope's alone: inside
+    // .compact the heading steps up at sm, elsewhere it runs straight to md.
+    const sm = await at(480, fluid)
+    assert.equal(sm.compacth1, '35px') // 30px → 40px at sm
+    assert.ok(Math.abs(parseFloat(sm.h1) - 75.43) < 0.01, `h1 ${sm.h1}`) // 64px → 96px at md
+    assert.equal((await at(900, fluid)).compacth1, '40px')
+
+    // Opted in, the other groups follow their variables too.
+    const opted = await at(544, all)
+    assert.equal(opted.tx, '20px') // 16px → 24px, through --tw-translate-x
+    assert.equal(opted.fade, '0.6') // 0.2 → 1
+    assert.equal(opted.turn, '45deg') // 0deg → 90deg
+    for (const width of [320, 768, 1024, 1536]) {
+      const fl = await at(width, all)
+      const pl = await at(width, plain)
+      for (const id of ['tx', 'fade', 'turn', 'h1', 'pxs', 'cols']) assert.equal(fl[id], pl[id], `${id} at ${width}px with every group`)
+    }
+  } finally {
+    await browser.close()
+  }
+})
