@@ -46,11 +46,11 @@ const utilities = (css) => `${theme}\n@layer utilities { ${css} }`
 test('a utility that reads a responsive root variable gets a token for each of its breakpoints', async () => {
   const out = await appendix(utilities(`.h1 { font-size: var(--h1) }`))
   assert.deepEqual(rule(out, '.h1'), [
-    '.h1 { --fl-font-size-0: var(--fl--h1-0); --fl-font-size-48rem: var(--fl--h1-48rem); --fl-font-size-64rem: var(--fl--h1-64rem); font-size: --fl-font-size(); }',
+    '.h1 { --fl-fs-0: var(--fl--h1-0); --fl-fs-48rem: var(--fl--h1-48rem); --fl-fs-64rem: var(--fl--h1-64rem); font-size: --fl-fs(); }',
   ])
   // the variable's breakpoints are the interpolator's, though no utility has a variant
   assert.match(out, /@function --fl\(--v0, --v48rem, --v64rem\)/)
-  for (const key of ['0', '48rem', '64rem']) assert.match(out, new RegExp(`@property --fl-font-size-${key} \\{ syntax: "\\*"; inherits: false; \\}`))
+  for (const key of ['0', '48rem', '64rem']) assert.match(out, new RegExp(`@property --fl-fs-${key} \\{ syntax: "\\*"; inherits: false; \\}`))
   // the copies are plain inherited variables: nothing registers them
   assert.doesNotMatch(out, /@property --fl--/)
 })
@@ -94,14 +94,14 @@ test('only fluid properties follow: anything else that reads the variable steps 
   // opted in, the translate variable is a fluid property like any other
   const all = await appendix(utilities(`.translate-x-\\(--xs\\) { --tw-translate-x: var(--xs); translate: var(--tw-translate-x) var(--tw-translate-y) }`), { include: 'transforms' })
   assert.deepEqual(rule(all, '.translate-x-\\(--xs\\)'), [
-    '.translate-x-\\(--xs\\) { --fl-tw-translate-x-0: var(--fl--xs-0); --fl-tw-translate-x-48rem: var(--fl--xs-48rem); --tw-translate-x: --fl-tw-translate-x(); }',
+    '.translate-x-\\(--xs\\) { --fl-translate-x-0: var(--fl--xs-0); --fl-translate-x-48rem: var(--fl--xs-48rem); --tw-translate-x: --fl-translate-x(); }',
   ])
 })
 
 test('a root variable that reads a responsive one is responsive too', async () => {
   const out = await appendix(utilities(`.px-\\(--input\\) { padding-inline: var(--input) }`))
   assert.deepEqual(rule(out, '.px-\\(--input\\)'), [
-    '.px-\\(--input\\) { --fl-padding-inline-0: var(--fl--input-0); --fl-padding-inline-48rem: var(--fl--input-48rem); padding-inline: --fl-padding-inline(); }',
+    '.px-\\(--input\\) { --fl-px-0: var(--fl--input-0); --fl-px-48rem: var(--fl--input-48rem); padding-inline: --fl-px(); }',
   ])
   // the alias is copied reading the copies of what it reads, which are copied in turn
   assert.deepEqual(rule(out, ':root, :host'), [
@@ -127,14 +127,14 @@ test('arithmetic and fallbacks keep their shape around the copy', async () => {
     .px-xs { padding-inline: var(--xs) var(--pad) }
   `))
   assert.deepEqual(rule(out, '.-mt-xs'), [
-    '.-mt-xs { --fl-margin-top-0: calc(var(--fl--xs-0) * -1); --fl-margin-top-48rem: calc(var(--fl--xs-48rem) * -1); margin-top: --fl-margin-top(); }',
+    '.-mt-xs { --fl-mt-0: calc(var(--fl--xs-0) * -1); --fl-mt-48rem: calc(var(--fl--xs-48rem) * -1); margin-top: --fl-mt(); }',
   ])
   assert.deepEqual(rule(out, '.mt-fallback'), [
-    '.mt-fallback { --fl-margin-top-0: var(--unset, var(--fl--xs-0)); --fl-margin-top-48rem: var(--unset, var(--fl--xs-48rem)); margin-top: --fl-margin-top(); }',
+    '.mt-fallback { --fl-mt-0: var(--unset, var(--fl--xs-0)); --fl-mt-48rem: var(--unset, var(--fl--xs-48rem)); margin-top: --fl-mt(); }',
   ])
   // a shorthand list is split first, so each side follows its own variable
   assert.deepEqual(rule(out, '.px-xs'), [
-    '.px-xs { --fl-padding-inline-start-0: var(--fl--xs-0); --fl-padding-inline-start-48rem: var(--fl--xs-48rem); --fl-padding-inline-end-0: var(--fl--pad-0); --fl-padding-inline-end-48rem: var(--fl--pad-48rem); --fl-padding-inline-end-64rem: var(--fl--pad-64rem); padding-inline-start: --fl-padding-inline-start(); padding-inline-end: --fl-padding-inline-end(); }',
+    '.px-xs { --fl-ps-0: var(--fl--xs-0); --fl-ps-48rem: var(--fl--xs-48rem); --fl-pe-0: var(--fl--pad-0); --fl-pe-48rem: var(--fl--pad-48rem); --fl-pe-64rem: var(--fl--pad-64rem); padding-inline-start: --fl-ps(); padding-inline-end: --fl-pe(); }',
   ])
 })
 
@@ -146,13 +146,13 @@ test('a value between two of the variable\'s breakpoints, or reading several var
     @media (width >= 64rem) { .lg\\:p-xs { padding: var(--xs) } }
   `))
   // `--xs` says nothing at 40rem or 64rem: there the token is whatever it last was
-  assert.deepEqual(rule(out, '.sm\\:p-xs'), ['.sm\\:p-xs { --fl-padding-40rem: var(--fl--xs-0); --fl-padding-48rem: var(--fl--xs-48rem); }', '.sm\\:p-xs { padding: --fl-padding(); }'])
-  assert.deepEqual(rule(out, '.lg\\:p-xs'), ['.lg\\:p-xs { --fl-padding-64rem: var(--fl--xs-48rem, var(--fl--xs-0)); }', '.lg\\:p-xs { padding: --fl-padding(); }'])
+  assert.deepEqual(rule(out, '.sm\\:p-xs'), ['.sm\\:p-xs { --fl-p-40rem: var(--fl--xs-0); --fl-p-48rem: var(--fl--xs-48rem); }', '.sm\\:p-xs { padding: --fl-p(); }'])
+  assert.deepEqual(rule(out, '.lg\\:p-xs'), ['.lg\\:p-xs { --fl-p-64rem: var(--fl--xs-48rem, var(--fl--xs-0)); }', '.lg\\:p-xs { padding: --fl-p(); }'])
   // two variables: each falls back on its own, so the sum stands wherever either is cleared
   assert.deepEqual(rule(out, '.mt-sum'), [
-    '.mt-sum { --fl-margin-top-0: calc(var(--fl--xs-0) + var(--fl--pad-0)); ' +
-      '--fl-margin-top-48rem: calc(var(--fl--xs-48rem, var(--fl--xs-0)) + var(--fl--pad-48rem, var(--fl--pad-0))); ' +
-      '--fl-margin-top-64rem: calc(var(--fl--xs-48rem, var(--fl--xs-0)) + var(--fl--pad-64rem, var(--fl--pad-48rem, var(--fl--pad-0)))); margin-top: --fl-margin-top(); }',
+    '.mt-sum { --fl-mt-0: calc(var(--fl--xs-0) + var(--fl--pad-0)); ' +
+      '--fl-mt-48rem: calc(var(--fl--xs-48rem, var(--fl--xs-0)) + var(--fl--pad-48rem, var(--fl--pad-0))); ' +
+      '--fl-mt-64rem: calc(var(--fl--xs-48rem, var(--fl--xs-0)) + var(--fl--pad-64rem, var(--fl--pad-48rem, var(--fl--pad-0)))); margin-top: --fl-mt(); }',
   ])
 })
 
@@ -171,7 +171,7 @@ test('a variable set again elsewhere is copied there, so the override holds at e
   // a breakpoint only an override uses is one of the variable's, and the root says nothing there
   assert.deepEqual(rule(out, '.compact'), ['.compact { --fl--xs-0: 4px; --fl--xs-48rem: initial; --fl--xs-80rem: 6px; }'])
   assert.deepEqual(rule(out, ':root'), [':root { --fl--xs-48rem: 16px; --fl--xs-80rem: initial; }'])
-  assert.match(rule(out, '.p-xs')[0], /--fl-padding-80rem: var\(--fl--xs-80rem\);/)
+  assert.match(rule(out, '.p-xs')[0], /--fl-p-80rem: var\(--fl--xs-80rem\);/)
   // nesting, conditions and !important are kept as they are
   assert.match(out, /\.card \{ \.dark & \{ --fl--xs-0: 1px; --fl--xs-48rem: initial; --fl--xs-80rem: initial; \}; \}/)
   assert.match(out, /@media \(prefers-color-scheme: dark\) \{ \.section \{ --fl--xs-0: 7px !important; --fl--xs-48rem: initial !important; --fl--xs-80rem: initial !important; \}; \}/)
@@ -193,7 +193,7 @@ test('a variable the root never changes is not responsive, wherever else it is s
     }`
   const out = await appendix(tailwind)
   assert.doesNotMatch(out, /--fl--/)
-  assert.deepEqual(rule(out, '.text-sm'), ['.text-sm { --fl-line-height-num-0: var(--tw-leading, var(--text-sm--line-height)); line-height: --fl-line-height-num(); }'])
+  assert.deepEqual(rule(out, '.text-sm'), ['.text-sm { --fl-lh-num-0: var(--tw-leading, var(--text-sm--line-height)); line-height: --fl-lh-num(); }'])
   assert.deepEqual(rule(out, '.gap-\\(--gap\\)'), ['.gap-\\(--gap\\) { --fl-gap-0: var(--gap); gap: --fl-gap(); }'])
   // nor one the root only sets under a breakpoint: there is no base to start from
   assert.doesNotMatch(await appendix(`@media (width >= 48rem) { :root { --late: 8px } .md\\:mt-4 { margin-top: 1rem } } .mt-\\(--late\\) { margin-top: var(--late) }`), /--fl--/)
@@ -211,7 +211,7 @@ test('numbers, ratios and angles follow their variable like lengths do', async (
   const out = await appendix(`:root { --lh: 1.2; --o: 20%; --r: 0; }
     @media (width >= 48rem) { :root { --lh: 1.5; --o: 1; --r: 90deg; } }
     .leading-lh { line-height: var(--lh) } .opacity-o { opacity: var(--o) } .rotate-r { rotate: var(--r) }`, { include: 'all' })
-  assert.deepEqual(rule(out, '.leading-lh'), ['.leading-lh { --fl-line-height-num-0: var(--fl--lh-0); --fl-line-height-num-48rem: var(--fl--lh-48rem); line-height: --fl-line-height-num(); }'])
+  assert.deepEqual(rule(out, '.leading-lh'), ['.leading-lh { --fl-lh-num-0: var(--fl--lh-0); --fl-lh-num-48rem: var(--fl--lh-48rem); line-height: --fl-lh-num(); }'])
   // a ratio is published as the number it stands for, so it is read at build time
   assert.deepEqual(rule(out, '.opacity-o'), ['.opacity-o { --fl-opacity-0: 0.2; --fl-opacity-48rem: 1; opacity: --fl-opacity(); }'])
   // a bare zero is no angle inside calc()
@@ -220,26 +220,26 @@ test('numbers, ratios and angles follow their variable like lengths do', async (
 
 test('a variable that reaches zero at a breakpoint is published as 0px there', async () => {
   const out = await appendix(`:root { --z: 16px } @media (width >= 48rem) { :root { --z: 0 } } .p-z { padding: var(--z) }`)
-  assert.deepEqual(rule(out, '.p-z'), ['.p-z { --fl-padding-0: var(--fl--z-0); --fl-padding-48rem: 0px; padding: --fl-padding(); }'])
+  assert.deepEqual(rule(out, '.p-z'), ['.p-z { --fl-p-0: var(--fl--z-0); --fl-p-48rem: 0px; padding: --fl-p(); }'])
 })
 
 test('a zero behind a variable is published as 0px when the variable is zero everywhere', async () => {
   const css = (extra) => `:root { --none: 0; --xs: 12px } ${extra} .p-none { padding: var(--none) } @media (width >= 48rem) { .md\\:p-xs { padding: var(--xs) } }`
   // `calc(0 + (12px - 0) * …)` is invalid: inside calc() a bare 0 is a number
-  assert.deepEqual(rule(await appendix(css('')), '.p-none'), ['.p-none { --fl-padding-0: 0px; padding: --fl-padding(); }'])
+  assert.deepEqual(rule(await appendix(css('')), '.p-none'), ['.p-none { --fl-p-0: 0px; padding: --fl-p(); }'])
   // set again somewhere, it may be a length there, and stays live
-  assert.deepEqual(rule(await appendix(css('.has-header { --none: 64px }')), '.p-none'), ['.p-none { --fl-padding-0: var(--none); padding: --fl-padding(); }'])
+  assert.deepEqual(rule(await appendix(css('.has-header { --none: 64px }')), '.p-none'), ['.p-none { --fl-p-0: var(--none); padding: --fl-p(); }'])
 })
 
 test('container variants keep the live variable: a container says nothing about the viewport', async () => {
   const out = await appendix(utilities(`.p-0 { padding: 0 } @container (width >= 28rem) { .\\@md\\:p-xs { padding: var(--xs) } }`))
-  assert.match(out, /\.\\@md\\:p-xs \{ --fl-padding-c28rem: var\(--xs\); \}/)
+  assert.match(out, /\.\\@md\\:p-xs \{ --fl-p-c28rem: var\(--xs\); \}/)
   assert.doesNotMatch(out, /--fl--/)
 })
 
 test('a variant under a condition publishes its tokens under that condition', async () => {
   const out = await appendix(utilities(`@media (prefers-color-scheme: dark) { .dark\\:p-xs { padding: var(--xs) } }`))
-  assert.match(out, /@media \(prefers-color-scheme: dark\) \{ \.dark\\:p-xs \{ --fl-padding-0: var\(--fl--xs-0\); --fl-padding-48rem: var\(--fl--xs-48rem\); padding: --fl-padding\(\); \}; \}/)
+  assert.match(out, /@media \(prefers-color-scheme: dark\) \{ \.dark\\:p-xs \{ --fl-p-0: var\(--fl--xs-0\); --fl-p-48rem: var\(--fl--xs-48rem\); padding: --fl-p\(\); \}; \}/)
 })
 
 test('a later rule clears the tokens an earlier one published ahead of itself', async () => {
@@ -254,23 +254,23 @@ test('a later rule clears the tokens an earlier one published ahead of itself', 
     @container (width >= 28rem) { .\\@md\\:mt-0 { margin-top: 0 } }
   `))
   // `mt-pad sm:mt-0` is 0 from sm up in Tailwind: the variable's md and lg values must not come back
-  assert.deepEqual(rule(out, '.sm\\:mt-0')[0], '.sm\\:mt-0 { --fl-margin-top-40rem: 0px; --fl-margin-top-48rem: initial; --fl-margin-top-64rem: initial; }')
+  assert.deepEqual(rule(out, '.sm\\:mt-0')[0], '.sm\\:mt-0 { --fl-mt-40rem: 0px; --fl-mt-48rem: initial; --fl-mt-64rem: initial; }')
   // at md it sets that token itself and clears the one above; at lg there is nothing above
-  assert.deepEqual(rule(out, '.md\\:mt-0')[0], '.md\\:mt-0 { --fl-margin-top-48rem: 0px; --fl-margin-top-64rem: initial; }')
-  assert.ok(rule(out, '.lg\\:mt-0').includes('.lg\\:mt-0 { --fl-margin-top-64rem: 0px; }'))
+  assert.deepEqual(rule(out, '.md\\:mt-0')[0], '.md\\:mt-0 { --fl-mt-48rem: 0px; --fl-mt-64rem: initial; }')
+  assert.ok(rule(out, '.lg\\:mt-0').includes('.lg\\:mt-0 { --fl-mt-64rem: 0px; }'))
   // a base utility sorted after it wins the property at every width, so it clears them all
-  assert.deepEqual(rule(out, '.mt-4'), ['.mt-4 { --fl-margin-top-0: 1rem; --fl-margin-top-48rem: initial; --fl-margin-top-64rem: initial; margin-top: --fl-margin-top(); }'])
+  assert.deepEqual(rule(out, '.mt-4'), ['.mt-4 { --fl-mt-0: 1rem; --fl-mt-48rem: initial; --fl-mt-64rem: initial; margin-top: --fl-mt(); }'])
   // a keyword takes the property itself, and a container token is on another axis
   assert.deepEqual(rule(out, '.mt-auto'), ['.mt-auto { margin-top: auto; }'])
   assert.ok(rule(out, '.\\@md\\:mt-0').every((r) => !r.includes('initial')))
   // another property's tokens are not this rule's to clear
-  assert.deepEqual(rule(out, '.p-xs'), ['.p-xs { --fl-padding-0: var(--fl--xs-0); --fl-padding-48rem: var(--fl--xs-48rem); padding: --fl-padding(); }'])
+  assert.deepEqual(rule(out, '.p-xs'), ['.p-xs { --fl-p-0: var(--fl--xs-0); --fl-p-48rem: var(--fl--xs-48rem); padding: --fl-p(); }'])
 })
 
 test('breakpoints written in another unit are still told apart, and cleared by their width', async () => {
   const out = await appendix(`:root { --u: 10px } @media (min-width: 768px) { :root { --u: 30px } }
     .mt-u { margin-top: var(--u) } @media (width >= 48rem) { .md\\:mt-2 { margin-top: 0.5rem } }`)
-  assert.deepEqual(rule(out, '.md\\:mt-2')[0], '.md\\:mt-2 { --fl-margin-top-48rem: 0.5rem; --fl-margin-top-768px: initial; }')
+  assert.deepEqual(rule(out, '.md\\:mt-2')[0], '.md\\:mt-2 { --fl-mt-48rem: 0.5rem; --fl-mt-768px: initial; }')
 })
 
 test('every copy points at the declaration it copies', async () => {

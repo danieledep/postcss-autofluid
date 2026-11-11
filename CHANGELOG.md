@@ -7,6 +7,18 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
+- Tokens and wrappers carry a short name for their property instead of the
+  property itself: `--fl-mt-48rem` and `--fl_k3x9a-mt()` for `margin-top`.
+  The names are Tailwind's (`px`, `max-w`, `rounded-tl`, `gap-x`,
+  `scroll-mt`, `inset-x`, `border-t`), with `fs`, `lh` and `lh-num`, `ls`
+  for type. A property added through `properties` keeps its full name, and
+  a short name gives way to a listed property that is really called that.
+  Anything that reads a token by name (`var(--fl-margin-top-48rem)`) needs
+  the new name. On four sample builds this and the next change take 15 to
+  19% off the appended CSS minified, 12 to 14% after brotli.
+- A wrapper names only the tokens some rule publishes. Every wrapper passed
+  one argument per breakpoint and stop, though most properties speak at few
+  of them; the rest now read one shared, never-set name (`--fl-0`).
 - Renamed to `postcss-autofluid` (was `postcss-fluid-variants`). The plugin
   adds no variants: it makes the responsive utilities you already write
   fluid, automatically.

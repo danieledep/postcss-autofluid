@@ -8,8 +8,8 @@
  * — it appends a twin that publishes the value as a breakpoint-tagged token and
  * hands the property to one shared CSS function:
  *
- *   .md\:mt-8 { --fl-margin-top-48rem: calc(var(--spacing) * 8) }
- *   @media (width >= 48rem) { .md\:mt-8 { margin-top: --fl_x1y2z-margin-top() } }
+ *   .md\:mt-8 { --fl-mt-48rem: calc(var(--spacing) * 8) }
+ *   @media (width >= 48rem) { .md\:mt-8 { margin-top: --fl_x1y2z-mt() } }
  *
  * The browser's cascade then assembles whichever tokens co-occur on an element.
  * Two or more tokens for a property interpolate between their breakpoints; a
@@ -27,6 +27,7 @@
  *   lib/options.js       defaults, opt-in groups, validation
  *   lib/values.js        what a value is: length, ratio, angle or fixed
  *   lib/context.js       where a declaration sits: rule, at-rules, breakpoint
+ *   lib/names.js         short names for properties
  *   lib/variables.js     root variables that change at a breakpoint
  *   lib/interpolator.js  the shared @function
  */
@@ -37,14 +38,19 @@ const {
   components, footprint, themeOf, resolve, interpolable, numeric, ratio,
 } = require('./lib/values.js')
 const { UTILITY, SWITCH, MIN_WIDTH, BASE, contextOf } = require('./lib/context.js')
+const { namer } = require('./lib/names.js')
 const { variablesOf } = require('./lib/variables.js')
 const { interpolator, signature } = require('./lib/interpolator.js')
 
 function autofluid(options) {
   const { prefix, minWidth, containerMinWidth, fluidable, units, layers } = normalize(options)
 
-  // `--tw-scale-x` names its tokens `--fl-tw-scale-x-*`.
-  const slug = (name) => name.replace(/^-+/, '')
+  // Tokens and wrappers carry a short name for their property (`mt`, `fs`,
+  // `max-w`; see lib/names.js). A channel is a property, or `<prop>-num`
+  // for its unitless family: `--fl-lh-48rem`, `--fl-lh-num-48rem`.
+  const name = namer(fluidable)
+  const slug = (channel) =>
+    channel.endsWith('-num') && !fluidable.has(channel) ? `${name(channel.slice(0, -4))}-num` : name(channel)
   const token = (prop, key) => `--${prefix}-${slug(prop)}-${key}`
   // A fixed value at a breakpoint publishes this instead of a value token.
   const stop = (prop, key) => `--${prefix}-${slug(prop)}-${key}-stop`
@@ -279,6 +285,11 @@ function autofluid(options) {
       const wrapper = (channel) => `${fn}-${slug(channel)}`
 
       // ── One thin wrapper per token family, reading the element's tokens ───
+      // The interpolator takes every breakpoint; most families speak at few
+      // of them. A token no rule publishes is the same nothing under any
+      // name, so one short name stands in for all of them.
+      const nothing = `--${prefix}-0`
+      const read = (custom) => `var(${published.has(custom) ? custom : nothing})`
       const wrappers = [...channels.keys()].map((channel) =>
         new AtRule({
           name: 'function',
@@ -287,9 +298,9 @@ function autofluid(options) {
             decl(
               'result',
               `${fn}(${[
-                ...keys.map((k) => `var(${token(channel, k)})`),
-                ...stops.map((k) => `var(${stop(channel, k)})`),
-                ...(cbps.length ? [`var(${inContainer(channel)})`] : []),
+                ...keys.map((k) => read(token(channel, k))),
+                ...stops.map((k) => read(stop(channel, k))),
+                ...(cbps.length ? [read(inContainer(channel))] : []),
               ].join(', ')})`,
             ),
           ],

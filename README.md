@@ -104,21 +104,23 @@ That rule already contains everything needed: the breakpoint (from the media que
 ```css
 @supports (top: --fl()) {
   @function --fl_k3x9a(--v0, --v48rem) { /* one interpolator, ~1kb, emitted once */ }
-  @function --fl_k3x9a-margin-top() {
-    result: --fl_k3x9a(var(--fl-margin-top-0), var(--fl-margin-top-48rem));
+  @function --fl_k3x9a-mt() {
+    result: --fl_k3x9a(var(--fl-mt-0), var(--fl-mt-48rem));
   }
-  @property --fl-margin-top-0     { syntax: "*"; inherits: false }
-  @property --fl-margin-top-48rem { syntax: "*"; inherits: false }
+  @property --fl-mt-0     { syntax: "*"; inherits: false }
+  @property --fl-mt-48rem { syntax: "*"; inherits: false }
 
   @layer utilities {
-    .mt-6     { --fl-margin-top-0: calc(var(--spacing) * 6); margin-top: --fl_k3x9a-margin-top() }
-    .md\:mt-8 { --fl-margin-top-48rem: calc(var(--spacing) * 8) }
+    .mt-6     { --fl-mt-0: calc(var(--spacing) * 6); margin-top: --fl_k3x9a-mt() }
+    .md\:mt-8 { --fl-mt-48rem: calc(var(--spacing) * 8) }
     @media (width >= 48rem) {
-      .md\:mt-8 { margin-top: --fl_k3x9a-margin-top() }
+      .md\:mt-8 { margin-top: --fl_k3x9a-mt() }
     }
   }
 }
 ```
+
+Tokens and wrappers carry a short name for their property, the one Tailwind uses for it: `mt`, `px`, `max-w`, `rounded-tl`, `gap-x`. Type uses the CSS initials `fs`, `lh` and `ls`. A property you add with `properties` keeps its full name. The property is written a few hundred times in a build, so the short names save 12 to 17% of the appended CSS.
 
 A twin mirrors its original exactly (same selector, same at-rule ancestors, layers included, same order), so it wins precisely where the original would have won and never disturbs anything else. The one deliberate difference: the token is published *without* the breakpoint media, so the band below can already interpolate towards it.
 
@@ -178,10 +180,10 @@ The variable itself is never touched, and only utilities on a fluid property fol
 ```css
 @layer utilities {
   .h1 {
-    --fl-font-size-0: var(--fl--h1-0);
-    --fl-font-size-48rem: var(--fl--h1-48rem);
-    --fl-font-size-64rem: var(--fl--h1-64rem);
-    font-size: --fl_k3x9a-font-size();
+    --fl-fs-0: var(--fl--h1-0);
+    --fl-fs-48rem: var(--fl--h1-48rem);
+    --fl-fs-64rem: var(--fl--h1-64rem);
+    font-size: --fl_k3x9a-fs();
   }
 }
 @layer theme {
@@ -233,7 +235,7 @@ A ratio never meets a length. In `text-sm/6 md:text-lg`, `1.5rem` holds up to `m
 
 ```js
 'postcss-autofluid': {
-  prefix: 'fl',          // token and function names: --fl-<prop>-<bp>, --fl_<hash>()
+  prefix: 'fl',          // token and function names: --fl-<name>-<bp>, --fl_<hash>()
   minWidth: '20rem',     // viewport where the base (unprefixed) value sits; a number is px
   containerMinWidth: …,  // container width where the base value sits for @md: and friends; defaults to minWidth
   include: [],           // opt-in groups, see below; 'all' for every group
@@ -290,6 +292,8 @@ Measured on four public Tailwind codebases, built with Tailwind 4.3 and minified
 | shadcn/ui monorepo | 2488 | 1129 | 280 → 371 kB (+33%) | 34 → 41 kB (+22%) |
 
 Responsive theme variables add to that only where they are used: one copy per value of each variable a fluid utility reads, one token per breakpoint on each utility that reads it, and one clearing declaration per such breakpoint on the other utilities of that property.
+
+Since those measurements, tokens got short names and each wrapper stopped naming tokens no rule publishes. On four sample builds (marketing blocks, a docs UI, a component library, a token-driven site) that took 15 to 19% off the appended CSS minified and 12 to 14% after brotli.
 
 Twins compress well because they repeat selectors and values already in the file. Expect roughly a fifth on top of your CSS over the wire. The numbers need re-measuring on the current version: the defaults now skip percentages, viewport units, transforms, opacity and border widths, which removes twins, while logical properties, `space-*`, line-height ratios and container queries add some.
 

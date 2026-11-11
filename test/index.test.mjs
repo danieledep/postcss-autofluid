@@ -103,56 +103,56 @@ test('walks fallbacks toward the nearest defined token', async () => {
 
 test('emits one wrapper per fluid property', async () => {
   const out = await appendix(fixture)
-  assert.match(out, /@function --fl-margin-top\(\)/)
-  assert.match(out, /@function --fl-font-size\(\)/)
+  assert.match(out, /@function --fl-mt\(\)/)
+  assert.match(out, /@function --fl-fs\(\)/)
   // text-base and text-xl set line-height to ratios: their own family, no length one
-  assert.match(out, /@function --fl-line-height-num\(\)/)
-  assert.doesNotMatch(out, /@function --fl-line-height\(\)/)
+  assert.match(out, /@function --fl-lh-num\(\)/)
+  assert.doesNotMatch(out, /@function --fl-lh\(\)/)
   assert.doesNotMatch(out, /@function --fl-display/)
 })
 
 test('registers every published token as non-inherited, and nothing else', async () => {
   const out = flat(await appendix(fixture))
   for (const key of ['0', '48rem', '96rem']) {
-    assert.match(out, new RegExp(`@property --fl-margin-top-${key} \\{ syntax: "\\*"; inherits: false; \\}`))
+    assert.match(out, new RegExp(`@property --fl-mt-${key} \\{ syntax: "\\*"; inherits: false; \\}`))
   }
-  assert.match(out, /@property --fl-font-size-0 \{/)
-  assert.match(out, /@property --fl-font-size-80rem \{/)
-  assert.doesNotMatch(out, /@property --fl-font-size-48rem/)
-  assert.doesNotMatch(out, /@property --fl-margin-top-80rem/)
+  assert.match(out, /@property --fl-fs-0 \{/)
+  assert.match(out, /@property --fl-fs-80rem \{/)
+  assert.doesNotMatch(out, /@property --fl-fs-48rem/)
+  assert.doesNotMatch(out, /@property --fl-mt-80rem/)
   assert.doesNotMatch(out, /@property --fl-display/)
 })
 
 test('skips properties that never vary across breakpoints', async () => {
   const css = `@layer utilities { .w-full { width: 100% } .mt-6 { margin-top: 1.5rem } @media (width >= 48rem) { .md\\:mt-8 { margin-top: 2rem } } }`
   const out = await appendix(css)
-  assert.match(out, /--fl-margin-top-0/)
-  assert.doesNotMatch(out, /w-full|--fl-width/)
+  assert.match(out, /--fl-mt-0/)
+  assert.doesNotMatch(out, /w-full|--fl-w/)
 })
 
 test('twins live in the same layer as their originals', async () => {
   const out = flat(await appendix(fixture))
   assert.match(out, /@supports \(top: --fl\(\)\) \{ @function/)
-  assert.match(out, /@layer utilities \{ \.mt-6 \{ --fl-margin-top-0: calc\(var\(--spacing\) \* 6\); margin-top: --fl-margin-top\(\); \}/)
+  assert.match(out, /@layer utilities \{ \.mt-6 \{ --fl-mt-0: calc\(var\(--spacing\) \* 6\); margin-top: --fl-mt\(\); \}/)
 })
 
 test('publishes breakpoint tokens unconditionally, but hands over the property only inside the breakpoint', async () => {
   const out = flat(await appendix(fixture))
-  assert.match(out, /\} \.md\\:mt-8 \{ --fl-margin-top-48rem: calc\(var\(--spacing\) \* 8\); \} @media/)
-  assert.match(out, /@media \(width >= 48rem\) \{ \.md\\:mt-8 \{ margin-top: --fl-margin-top\(\); \}/)
-  assert.match(out, /@media \(width >= 80rem\) \{ \.xl\\:text-xl \{ font-size: --fl-font-size\(\); line-height: --fl-line-height-num\(\); \}/)
+  assert.match(out, /\} \.md\\:mt-8 \{ --fl-mt-48rem: calc\(var\(--spacing\) \* 8\); \} @media/)
+  assert.match(out, /@media \(width >= 48rem\) \{ \.md\\:mt-8 \{ margin-top: --fl-mt\(\); \}/)
+  assert.match(out, /@media \(width >= 80rem\) \{ \.xl\\:text-xl \{ font-size: --fl-fs\(\); line-height: --fl-lh-num\(\); \}/)
 })
 
 test('understands escaped leading digits such as 2xl', async () => {
   const out = flat(await appendix(fixture))
-  assert.match(out, /\.\\32 xl\\:mt-11 \{ --fl-margin-top-96rem: calc\(var\(--spacing\) \* 11\); \}/)
-  assert.match(out, /@media \(width >= 96rem\) \{ \.\\32 xl\\:mt-11 \{ margin-top: --fl-margin-top\(\); \}/)
+  assert.match(out, /\.\\32 xl\\:mt-11 \{ --fl-mt-96rem: calc\(var\(--spacing\) \* 11\); \}/)
+  assert.match(out, /@media \(width >= 96rem\) \{ \.\\32 xl\\:mt-11 \{ margin-top: --fl-mt\(\); \}/)
 })
 
 test('re-asserts keyword values so they keep beating earlier twins', async () => {
   const out = flat(await appendix(fixture))
-  assert.match(out, /@media \(width >= 48rem\) \{ \.md\\:mt-8 \{ margin-top: --fl-margin-top\(\); \} \.md\\:mt-auto \{ margin-top: auto; \}/)
-  assert.doesNotMatch(out, /--fl-margin-top-48rem: auto/)
+  assert.match(out, /@media \(width >= 48rem\) \{ \.md\\:mt-8 \{ margin-top: --fl-mt\(\); \} \.md\\:mt-auto \{ margin-top: auto; \}/)
+  assert.doesNotMatch(out, /--fl-mt-48rem: auto/)
 })
 
 test('leaves !important declarations to win on their own', async () => {
@@ -163,15 +163,15 @@ test('leaves !important declarations to win on their own', async () => {
 test('mirrors non-breakpoint conditions instead of skipping them', async () => {
   const out = flat(await appendix(fixture))
   // a max-width variant is a base token that only exists below the breakpoint
-  assert.match(out, /@media \(width < 48rem\) \{ \.max-md\\:mt-2 \{ --fl-margin-top-0: calc\(var\(--spacing\) \* 2\); margin-top: --fl-margin-top\(\); \}/)
+  assert.match(out, /@media \(width < 48rem\) \{ \.max-md\\:mt-2 \{ --fl-mt-0: calc\(var\(--spacing\) \* 2\); margin-top: --fl-mt\(\); \}/)
   // colour schemes likewise
   
-  assert.match(out, /@media \(prefers-color-scheme: dark\) \{ \.dark\\:mt-10 \{ --fl-margin-top-0: calc\(var\(--spacing\) \* 10\); margin-top: --fl-margin-top\(\); \}/)
+  assert.match(out, /@media \(prefers-color-scheme: dark\) \{ \.dark\\:mt-10 \{ --fl-mt-0: calc\(var\(--spacing\) \* 10\); margin-top: --fl-mt\(\); \}/)
 })
 
 test('strips only the breakpoint from a stacked variant token', async () => {
   const out = flat(await appendix(fixture))
-  assert.match(out, /@media \(prefers-color-scheme: dark\) \{ \.dark\\:mt-10 \{[^}]*\} \.dark\\:md\\:mt-4 \{ --fl-margin-top-48rem: calc\(var\(--spacing\) \* 4\); \} @media \(width >= 48rem\) \{ \.dark\\:md\\:mt-4 \{ margin-top: --fl-margin-top\(\); \}/)
+  assert.match(out, /@media \(prefers-color-scheme: dark\) \{ \.dark\\:mt-10 \{[^}]*\} \.dark\\:md\\:mt-4 \{ --fl-mt-48rem: calc\(var\(--spacing\) \* 4\); \} @media \(width >= 48rem\) \{ \.dark\\:md\\:mt-4 \{ margin-top: --fl-mt\(\); \}/)
 })
 
 test('ignores non-fluid properties and selectors with extra specificity', async () => {
@@ -183,7 +183,7 @@ test('ignores non-fluid properties and selectors with extra specificity', async 
 test('accepts the zero-specificity :where() wrapper of class-based variants', async () => {
   const css = `.mt-6 { margin-top: 1.5rem } .dark\\:mt-10:where(.dark, .dark *) { margin-top: 2.5rem } @media (width >= 48rem) { .md\\:mt-8 { margin-top: 2rem } }`
   const out = flat(await appendix(css))
-  assert.match(out, /\.dark\\:mt-10:where\(\.dark, \.dark \*\) \{ --fl-margin-top-0: 2\.5rem; margin-top: --fl-margin-top\(\); \}/)
+  assert.match(out, /\.dark\\:mt-10:where\(\.dark, \.dark \*\) \{ --fl-mt-0: 2\.5rem; margin-top: --fl-mt\(\); \}/)
 })
 
 test('works on unlayered Tailwind v3 output', async () => {
@@ -191,7 +191,7 @@ test('works on unlayered Tailwind v3 output', async () => {
   const out = flat(await appendix(css))
   assert.match(out, /@function --fl\(--v0, --v768px\)/)
   assert.doesNotMatch(out, /@layer/)
-  assert.match(out, /\.md\\:mt-8 \{ --fl-margin-top-768px: 2rem; \} @media \(min-width: 768px\) \{ \.md\\:mt-8 \{ margin-top: --fl-margin-top\(\); \}/)
+  assert.match(out, /\.md\\:mt-8 \{ --fl-mt-768px: 2rem; \} @media \(min-width: 768px\) \{ \.md\\:mt-8 \{ margin-top: --fl-mt\(\); \}/)
 })
 
 test('is a no-op when nothing is fluidable', async () => {
@@ -202,7 +202,7 @@ test('is a no-op when nothing is fluidable', async () => {
 test('honours prefix and minWidth options', async () => {
   const out = await appendix(fixture, { prefix: 'fluid', minWidth: '320px' })
   assert.match(out, /@function --fluid\(/)
-  assert.match(out, /--fluid-margin-top-48rem/)
+  assert.match(out, /--fluid-mt-48rem/)
   assert.match(out, /else: 320px\)/)
 })
 
@@ -249,8 +249,8 @@ test('reads a breakpoint nested inside its rule, not just above it', async () =>
   const out = await appendix(
     `.md\\:mt-8 { @media (width >= 48rem) { margin-top: 2rem } } .mt-6 { margin-top: 1.5rem }`,
   )
-  assert.match(flat(out), /\.md\\:mt-8 \{ --fl-margin-top-48rem: 2rem; \}/)
-  assert.match(flat(out), /@media \(width >= 48rem\) \{ \.md\\:mt-8 \{ margin-top: --fl-margin-top\(\); \}/)
+  assert.match(flat(out), /\.md\\:mt-8 \{ --fl-mt-48rem: 2rem; \}/)
+  assert.match(flat(out), /@media \(width >= 48rem\) \{ \.md\\:mt-8 \{ margin-top: --fl-mt\(\); \}/)
 })
 
 test('flat and nested input produce identical appendices', async () => {
@@ -273,7 +273,7 @@ test('flat and nested input produce identical appendices', async () => {
   // a keyword value emits no functions at all
   assert.doesNotMatch(
     await equivalent(`.mt-6 { margin-top: 1.5rem } @media (width >= 48rem) { .md\\:mt-auto { margin-top: auto } }`),
-    /--fl-margin-top-48rem:/,
+    /--fl-mt-48rem:/,
   )
 })
 
@@ -288,7 +288,7 @@ test('reads a breakpoint nested two deep inside a rule', async () => {
   const out = flat(await appendix(
     `.mt-6 { margin-top: 1.5rem } .dark\\:md\\:mt-4 { @media (prefers-color-scheme: dark) { @media (width >= 48rem) { margin-top: 1rem } } }`,
   ))
-  assert.match(out, /@media \(prefers-color-scheme: dark\) \{ \.dark\\:md\\:mt-4 \{ --fl-margin-top-48rem: 1rem; \} @media \(width >= 48rem\) \{ \.dark\\:md\\:mt-4 \{ margin-top: --fl-margin-top\(\); \}/)
+  assert.match(out, /@media \(prefers-color-scheme: dark\) \{ \.dark\\:md\\:mt-4 \{ --fl-mt-48rem: 1rem; \} @media \(width >= 48rem\) \{ \.dark\\:md\\:mt-4 \{ margin-top: --fl-mt\(\); \}/)
 })
 
 test('warns instead of silently emitting nothing when responsive values go unread', async () => {
@@ -317,10 +317,10 @@ test('reads only @layer utilities when the stylesheet has one', async () => {
     @layer components { .card { padding: 1rem } @media (width >= 48rem) { .card { padding: 2rem } } }
     @layer utilities { .mt-6 { margin-top: 1.5rem } @media (width >= 48rem) { .md\\:mt-8 { margin-top: 2rem } } }`)
   const out = await appendix(css)
-  assert.match(out, /--fl-margin-top-48rem/)
-  assert.doesNotMatch(out, /\.card|--fl-padding/)
+  assert.match(out, /--fl-mt-48rem/)
+  assert.doesNotMatch(out, /\.card|--fl-p/)
   // an explicit null reads every layer again
-  assert.match(await appendix(css, { layers: null }), /\.card \{ --fl-padding-48rem: 2rem/)
+  assert.match(await appendix(css, { layers: null }), /\.card \{ --fl-p-48rem: 2rem/)
 })
 
 test('reads only the utilities layer by default, and says so when the stylesheet has none', async () => {
@@ -331,7 +331,7 @@ test('reads only the utilities layer by default, and says so when the stylesheet
   assert.equal(res.warnings().length, 1)
   assert.match(res.warnings()[0].text, /none inside @layer utilities.*layers: null/)
   // 'auto' and null read unlayered output
-  for (const layers of ['auto', null]) assert.match((await plugin({ layers })).css, /--fl-margin-top-768px: 2rem/)
+  for (const layers of ['auto', null]) assert.match((await plugin({ layers })).css, /--fl-mt-768px: 2rem/)
   // a plain stylesheet with nothing responsive stays silent
   assert.deepEqual((await postcss([autofluid()]).process(`.a { margin-top: 1rem }`, { from: undefined })).warnings(), [])
 })
@@ -357,24 +357,24 @@ test('with percentages and viewport and container units opted in, interpolates e
     }
   }`)
   const out = flat(await appendix(css, { include: ['percentages', 'viewport-units', 'container-units'] }))
-  assert.match(out, /\.w-64 \{ --fl-width-0: calc\(var\(--spacing\) \* 64\); width: --fl-width\(\); \}/)
-  assert.match(out, /\.max-w-md \{ --fl-max-width-0: var\(--container-md\);/)
+  assert.match(out, /\.w-64 \{ --fl-w-0: calc\(var\(--spacing\) \* 64\); width: --fl-w\(\); \}/)
+  assert.match(out, /\.max-w-md \{ --fl-max-w-0: var\(--container-md\);/)
   // calc() mixes them with rem, so the two ends need not share a unit
-  assert.match(out, /\.w-full \{ --fl-width-0: 100%; width: --fl-width\(\); \}/)
-  assert.match(out, /\.w-1\\\/2 \{ --fl-width-0: calc\(1\/2 \* 100%\);/)
-  assert.match(out, /\.w-screen \{ --fl-width-0: 100vw;/)
-  assert.match(out, /\.w-\\\[50cqw\\\] \{ --fl-width-0: 50cqw;/)
+  assert.match(out, /\.w-full \{ --fl-w-0: 100%; width: --fl-w\(\); \}/)
+  assert.match(out, /\.w-1\\\/2 \{ --fl-w-0: calc\(1\/2 \* 100%\);/)
+  assert.match(out, /\.w-screen \{ --fl-w-0: 100vw;/)
+  assert.match(out, /\.w-\\\[50cqw\\\] \{ --fl-w-0: 50cqw;/)
   // keywords and unknown variables keep their value
   assert.match(out, /\.w-\\\(--x\\\) \{ width: var\(--x\); \}/)
   assert.match(out, /\.w-fit \{ width: fit-content; \}/)
-  assert.doesNotMatch(out, /--fl-width-0: (fit-content|var\(--x\))/)
+  assert.doesNotMatch(out, /--fl-w-0: (fit-content|var\(--x\))/)
 })
 
 test('interpolates opted-in percentage heights and offsets too', async () => {
   const css = `.h-12 { height: 3rem } .top-4 { top: 1rem }
     @media (width >= 48rem) { .md\\:h-1\\/2 { height: 50% } .md\\:top-1\\/2 { top: 50% } }`
   const out = flat(await appendix(css, { include: 'percentages' }))
-  assert.match(out, /\.md\\:h-1\\\/2 \{ --fl-height-48rem: 50%; \}/)
+  assert.match(out, /\.md\\:h-1\\\/2 \{ --fl-h-48rem: 50%; \}/)
   assert.match(out, /\.md\\:top-1\\\/2 \{ --fl-top-48rem: 50%; \}/)
 })
 
@@ -382,13 +382,13 @@ test('with borders opted in, splits border widths into their sides and axes', as
   const css = `.border-2 { border-width: 2px } .border-\\[1px_2px\\] { border-width: 1px 2px } .border-x-2 { border-inline-width: 2px 4px }
     @media (width >= 48rem) { .md\\:border-8 { border-width: 8px } .md\\:border-y-4 { border-block-width: 4px } .md\\:border-s-4 { border-inline-start-width: 4px } }`
   const out = flat(await appendix(css, { include: 'borders' }))
-  assert.match(out, /\.border-2 \{ --fl-border-width-0: 2px; border-width: --fl-border-width\(\); \}/)
+  assert.match(out, /\.border-2 \{ --fl-border-0: 2px; border-width: --fl-border\(\); \}/)
   // only the longhands with a responsive value anywhere get tokens; the others
   // are re-asserted, since the `border-width` twin of another class would
   // otherwise override them
-  assert.match(out, /\.border-\\\[1px_2px\\\] \{ --fl-border-block-width-0: 1px; border-block-width: --fl-border-block-width\(\); border-inline-width: 2px; \}/)
-  assert.match(out, /\.border-x-2 \{ --fl-border-inline-start-width-0: 2px; border-inline-start-width: --fl-border-inline-start-width\(\); border-inline-end-width: 4px; \}/)
-  assert.match(out, /\.md\\:border-y-4 \{ --fl-border-block-width-48rem: 4px; \}/)
+  assert.match(out, /\.border-\\\[1px_2px\\\] \{ --fl-border-y-0: 1px; border-block-width: --fl-border-y\(\); border-inline-width: 2px; \}/)
+  assert.match(out, /\.border-x-2 \{ --fl-border-s-0: 2px; border-inline-start-width: --fl-border-s\(\); border-inline-end-width: 4px; \}/)
+  assert.match(out, /\.md\\:border-y-4 \{ --fl-border-y-48rem: 4px; \}/)
 })
 
 test('with transforms and opacity opted in, interpolates Tailwind transform variables, rotate angles and opacity', async () => {
@@ -406,13 +406,13 @@ test('with transforms and opacity opted in, interpolates Tailwind transform vari
   }`)
   const out = flat(await appendix(css, { include: ['transforms', 'opacity', 'percentages'] }))
   // the variable is the property; its tokens drop the leading dashes
-  assert.match(out, /\.translate-x-4 \{ --fl-tw-translate-x-0: calc\(var\(--spacing\) \* 4\); --tw-translate-x: --fl-tw-translate-x\(\); \}/)
-  assert.match(out, /@function --fl-tw-translate-x\(\) \{ result: --fl\(var\(--fl-tw-translate-x-0\), var\(--fl-tw-translate-x-48rem\)\); \}/)
-  assert.match(out, /\.md\\:translate-x-1\\\/2 \{ --fl-tw-translate-x-48rem: calc\(1 \/ 2 \* 100%\); \}/)
+  assert.match(out, /\.translate-x-4 \{ --fl-translate-x-0: calc\(var\(--spacing\) \* 4\); --tw-translate-x: --fl-translate-x\(\); \}/)
+  assert.match(out, /@function --fl-translate-x\(\) \{ result: --fl\(var\(--fl-translate-x-0\), var\(--fl-translate-x-48rem\)\); \}/)
+  assert.match(out, /\.md\\:translate-x-1\\\/2 \{ --fl-translate-x-48rem: calc\(1 \/ 2 \* 100%\); \}/)
   // a ratio's percentage is published as its number
-  assert.match(out, /\.scale-100 \{ --fl-tw-scale-x-0: 1; --fl-tw-scale-y-0: 1; --fl-tw-scale-z-0: 1; --tw-scale-x: --fl-tw-scale-x\(\);/)
-  assert.match(out, /\.-scale-y-110 \{ --fl-tw-scale-y-0: calc\(1\.1 \* -1\);/)
-  assert.match(out, /\.md\\:scale-150 \{ --fl-tw-scale-x-48rem: 1\.5;/)
+  assert.match(out, /\.scale-100 \{ --fl-scale-x-0: 1; --fl-scale-y-0: 1; --fl-scale-z-0: 1; --tw-scale-x: --fl-scale-x\(\);/)
+  assert.match(out, /\.-scale-y-110 \{ --fl-scale-y-0: calc\(1\.1 \* -1\);/)
+  assert.match(out, /\.md\\:scale-150 \{ --fl-scale-x-48rem: 1\.5;/)
   assert.match(out, /\.opacity-50 \{ --fl-opacity-0: 0\.5;/)
   assert.match(out, /\.opacity-0 \{ --fl-opacity-0: 0;/)
   assert.match(out, /\.md\\:opacity-100 \{ --fl-opacity-48rem: 1; \}/)
@@ -421,7 +421,7 @@ test('with transforms and opacity opted in, interpolates Tailwind transform vari
   assert.match(out, /\.md\\:rotate-45 \{ --fl-rotate-48rem: 45deg; \}/)
   assert.doesNotMatch(out, /--fl-tw-rotate-x/)
   // the composed `translate` / `scale` declarations are left to Tailwind
-  assert.doesNotMatch(out, /--fl-translate|--fl-scale-/)
+  assert.doesNotMatch(out, /--fl-translate-\d|--fl-scale-\d|\b(translate|scale): --fl/)
 })
 
 test('reads opted-in Tailwind 3 transforms, which compose every axis in transform', async () => {
@@ -433,18 +433,18 @@ test('reads opted-in Tailwind 3 transforms, which compose every axis in transfor
     }`
   const out = flat(await appendix(css, { include: 'transforms' }))
   assert.match(out, /\.rotate-0 \{ --fl-tw-rotate-0: 0deg; --tw-rotate: --fl-tw-rotate\(\); \}/)
-  assert.match(out, /\.md\\:scale-150 \{ --fl-tw-scale-x-768px: 1\.5;/)
+  assert.match(out, /\.md\\:scale-150 \{ --fl-scale-x-768px: 1\.5;/)
 })
 
 test('exclude leaves the named properties out of the list, and only those', async () => {
   const css = `.max-w-md { max-width: 28rem } .mt-6 { margin-top: 1.5rem } .p-4 { padding: 1rem } .pt-4 { padding-top: 1rem }
     @media (width >= 48rem) { .md\\:max-w-xl { max-width: 36rem } .md\\:mt-8 { margin-top: 2rem } .md\\:p-8 { padding: 2rem } .md\\:pt-8 { padding-top: 2rem } }`
   const out = flat(await appendix(css, { exclude: ['max-width', 'padding'] }))
-  assert.doesNotMatch(out, /--fl-max-width|--fl-padding-0|--fl-padding-48rem/)
-  assert.match(out, /--fl-margin-top-48rem: 2rem/)
-  assert.match(out, /--fl-padding-top-48rem: 2rem/)
+  assert.doesNotMatch(out, /--fl-max-w|--fl-p-0|--fl-p-48rem/)
+  assert.match(out, /--fl-mt-48rem: 2rem/)
+  assert.match(out, /--fl-pt-48rem: 2rem/)
   // it applies to a custom list too
-  assert.doesNotMatch(flat(await appendix(css, { properties: ['margin-top', 'max-width'], exclude: ['max-width'] })), /--fl-max-width/)
+  assert.doesNotMatch(flat(await appendix(css, { properties: ['margin-top', 'max-width'], exclude: ['max-width'] })), /--fl-max-w/)
 })
 
 test('interpolates line-height ratios on a family of their own, walled off from lengths', async () => {
@@ -453,12 +453,12 @@ test('interpolates line-height ratios on a family of their own, walled off from 
     @media (width >= 48rem) { .md\\:leading-none { line-height: var(--leading-none) } .md\\:leading-10 { line-height: calc(var(--spacing) * 10) } }
   }`)
   const out = flat(await appendix(css))
-  assert.match(out, /\.leading-6 \{ --fl-line-height-0: calc\(var\(--spacing\) \* 6\);/)
+  assert.match(out, /\.leading-6 \{ --fl-lh-0: calc\(var\(--spacing\) \* 6\);/)
   // each kind publishes its own token and a stop for the other family
-  assert.match(out, /\.md\\:leading-10 \{ --fl-line-height-num-48rem-stop: 1; --fl-line-height-48rem: calc/)
-  assert.match(out, /\.md\\:leading-none \{ --fl-line-height-48rem-stop: 1; --fl-line-height-num-48rem: var\(--leading-none\); \}/)
-  assert.match(out, /\.md\\:leading-none \{ line-height: --fl-line-height-num\(\); \}/)
-  assert.doesNotMatch(out, /--fl-line-height-48rem: var\(--leading-none\)/)
+  assert.match(out, /\.md\\:leading-10 \{ --fl-lh-num-48rem-stop: 1; --fl-lh-48rem: calc/)
+  assert.match(out, /\.md\\:leading-none \{ --fl-lh-48rem-stop: 1; --fl-lh-num-48rem: var\(--leading-none\); \}/)
+  assert.match(out, /\.md\\:leading-none \{ line-height: --fl-lh-num\(\); \}/)
+  assert.doesNotMatch(out, /--fl-lh-48rem: var\(--leading-none\)/)
 })
 
 test('a fixed value at a breakpoint is a wall the band below cannot see past', async () => {
@@ -469,12 +469,12 @@ test('a fixed value at a breakpoint is a wall the band below cannot see past', a
   }`)
   const out = flat(await appendix(css))
   // the stop is published without the breakpoint, the value re-asserted inside it
-  assert.match(out, /\.md\\:w-auto \{ --fl-width-48rem-stop: 1; \} @media \(width >= 48rem\) \{ \.md\\:w-auto \{ width: auto; \}/)
+  assert.match(out, /\.md\\:w-auto \{ --fl-w-48rem-stop: 1; \} @media \(width >= 48rem\) \{ \.md\\:w-auto \{ width: auto; \}/)
   assert.match(out, /@function --fl\(--v0, --v48rem, --v64rem, --s48rem\)/)
   assert.match(out, /--hi: if\(style\(--s48rem\): var\(--lo\); style\(--v48rem\): var\(--v48rem\); style\(--v64rem\): var\(--v64rem\); else: var\(--lo\)\)/)
   assert.match(out, /--hi-w: if\(style\(--s48rem\): 48rem; style\(--v48rem\): 48rem; style\(--v64rem\): 64rem; else: 99999px\)/)
-  assert.match(out, /@property --fl-width-48rem-stop \{ syntax: "\*"; inherits: false; \}/)
-  assert.match(out, /--fl-width\(\) \{ result: --fl\(var\(--fl-width-0\), var\(--fl-width-48rem\), var\(--fl-width-64rem\), var\(--fl-width-48rem-stop\)\); \}/)
+  assert.match(out, /@property --fl-w-48rem-stop \{ syntax: "\*"; inherits: false; \}/)
+  assert.match(out, /--fl-w\(\) \{ result: --fl\(var\(--fl-w-0\), var\(--fl-0\), var\(--fl-w-64rem\), var\(--fl-w-48rem-stop\)\); \}/)
 })
 
 test('a property whose only responsive values are fixed is left alone', async () => {
@@ -487,7 +487,7 @@ test('publishes a bare zero as 0px, since 0 inside calc() is a number', async ()
   const css = `.top-0 { top: 0 } .mt-0 { margin-top: 0 } @media (width >= 48rem) { .md\\:top-4 { top: 1rem } .md\\:mt-8 { margin-top: 2rem } }`
   const out = flat(await appendix(css))
   assert.match(out, /\.top-0 \{ --fl-top-0: 0px; top: --fl-top\(\); \}/)
-  assert.match(out, /\.mt-0 \{ --fl-margin-top-0: 0px;/)
+  assert.match(out, /\.mt-0 \{ --fl-mt-0: 0px;/)
 })
 
 test('keeps slash radii as written, since a top-level / is a separator, not division', async () => {
@@ -496,10 +496,10 @@ test('keeps slash radii as written, since a top-level / is a separator, not divi
     @media (width >= 48rem) { .md\\:rounded-2xl { border-radius: 1rem } .md\\:rounded-\\[16px\\/32px\\] { border-radius: 16px/32px } }`
   const out = flat(await appendix(css))
   assert.match(out, /\.rounded-\\\[4px\\\/8px\\\] \{ border-radius: 4px\/8px; \}/)
-  assert.match(out, /\.md\\:rounded-\\\[16px\\\/32px\\\] \{ --fl-border-radius-48rem-stop: 1; \}/)
-  assert.doesNotMatch(out, /--fl-border-radius-(0|48rem): (4|16)px\//)
+  assert.match(out, /\.md\\:rounded-\\\[16px\\\/32px\\\] \{ --fl-rounded-48rem-stop: 1; \}/)
+  assert.doesNotMatch(out, /--fl-rounded-(0|48rem): (4|16)px\//)
   // division inside calc() is still arithmetic
-  assert.match(out, /\.rounded-sm \{ --fl-border-radius-0: 0\.25rem;/)
+  assert.match(out, /\.rounded-sm \{ --fl-rounded-0: 0\.25rem;/)
 })
 
 test('treats lengths standing in for infinity as fixed', async () => {
@@ -507,10 +507,10 @@ test('treats lengths standing in for infinity as fixed', async () => {
   const css = `.rounded-sm { border-radius: 0.25rem } .w-4 { width: calc(1rem / 1) }
     @media (width >= 48rem) { .md\\:rounded-full { border-radius: 2147483647px } .md\\:rounded-xl { border-radius: 0.75rem } .md\\:w-8 { width: 2rem } }`
   const out = flat(await appendix(css))
-  assert.match(out, /\.md\\:rounded-full \{ --fl-border-radius-48rem-stop: 1; \}/)
+  assert.match(out, /\.md\\:rounded-full \{ --fl-rounded-48rem-stop: 1; \}/)
   assert.match(out, /@media \(width >= 48rem\) \{ \.md\\:rounded-full \{ border-radius: 2147483647px; \}/)
-  assert.doesNotMatch(out, /--fl-border-radius-48rem: 2147483647px/)
-  assert.match(out, /\.w-4 \{ --fl-width-0: calc\(1rem \/ 1\);/)
+  assert.doesNotMatch(out, /--fl-rounded-48rem: 2147483647px/)
+  assert.match(out, /\.w-4 \{ --fl-w-0: calc\(1rem \/ 1\);/)
 })
 
 test('makes start and end utilities fluid, and splits two-value logical shorthands', async () => {
@@ -518,11 +518,11 @@ test('makes start and end utilities fluid, and splits two-value logical shorthan
     .mx-pair { margin-inline: 4px 8px }
     @media (width >= 48rem) { .md\\:ms-8 { margin-inline-start: 2rem } .md\\:start-8 { inset-inline-start: 2rem } .md\\:rounded-s-2xl { border-start-start-radius: 1rem; border-end-start-radius: 1rem } .md\\:mx-pair { margin-inline: 8px 16px } }`
   const out = flat(await appendix(css))
-  for (const prop of ['margin-inline-start', 'inset-inline-start', 'border-start-start-radius', 'border-end-start-radius', 'margin-inline-end']) {
+  for (const prop of ['ms', 'inset-s', 'rounded-ss', 'rounded-es', 'me']) {
     assert.match(out, new RegExp(`@function --fl-${prop}\\(\\)`), prop)
   }
-  assert.match(out, /\.start-0 \{ --fl-inset-inline-start-0: 0px;/)
-  assert.match(out, /\.mx-pair \{ --fl-margin-inline-start-0: 4px; --fl-margin-inline-end-0: 8px; margin-inline-start: --fl-margin-inline-start\(\); margin-inline-end: --fl-margin-inline-end\(\); \}/)
+  assert.match(out, /\.start-0 \{ --fl-inset-s-0: 0px;/)
+  assert.match(out, /\.mx-pair \{ --fl-ms-0: 4px; --fl-me-0: 8px; margin-inline-start: --fl-ms\(\); margin-inline-end: --fl-me\(\); \}/)
 })
 
 test('makes space-x and space-y fluid on the children they target', async () => {
@@ -534,9 +534,9 @@ test('makes space-x and space-y fluid on the children they target', async () => 
   }`)
   const out = flat(await appendix(css))
   // the reverse variable is the rule's own, so the value is known to be a length
-  assert.match(out, /:where\(\.space-y-4 > :not\(:last-child\)\) \{ --fl-margin-block-start-0: calc\(calc\(var\(--spacing\) \* 4\) \* var\(--tw-space-y-reverse\)\); --fl-margin-block-end-0: /)
-  assert.match(out, /:where\(\.md\\:space-y-8>:not\(:last-child\)\) \{ --fl-margin-block-start-48rem: /)
-  assert.match(out, /@media \(min-width:48rem\) \{ :where\(\.md\\:space-y-8>:not\(:last-child\)\) \{ margin-block-start: --fl-margin-block-start\(\); margin-block-end: --fl-margin-block-end\(\); \}/)
+  assert.match(out, /:where\(\.space-y-4 > :not\(:last-child\)\) \{ --fl-mbs-0: calc\(calc\(var\(--spacing\) \* 4\) \* var\(--tw-space-y-reverse\)\); --fl-mbe-0: /)
+  assert.match(out, /:where\(\.md\\:space-y-8>:not\(:last-child\)\) \{ --fl-mbs-48rem: /)
+  assert.match(out, /@media \(min-width:48rem\) \{ :where\(\.md\\:space-y-8>:not\(:last-child\)\) \{ margin-block-start: --fl-mbs\(\); margin-block-end: --fl-mbe\(\); \}/)
   // the reverse flip itself is not a fluid property
   assert.doesNotMatch(out, /\.space-y-reverse/)
 })
@@ -556,16 +556,16 @@ test('interpolates container breakpoints over the container width', async () => 
   assert.match(out, /@container \(width >= 28rem\) \{ --clo: var\(--vc28rem, var\(--v0\)\);/)
   assert.match(out, /result: if\(style\(--cq\): clamp\(.*100cqw.*; style\(--vc28rem\) or style\(--vc36rem\): clamp\(.*100cqw.*; else: clamp\(.*100vw/)
   // tokens are published without the query; the property and the flag only under it
-  assert.match(out, /\.\\@md\\:mt-8 \{ --fl-margin-top-c28rem: 2rem; \} @container \(width >= 28rem\) \{ \.\\@md\\:mt-8 \{ --fl-margin-top-cq: 1; margin-top: --fl-margin-top\(\); \}/)
-  assert.match(out, /@property --fl-margin-top-cq \{ syntax: "\*"; inherits: false; \}/)
+  assert.match(out, /\.\\@md\\:mt-8 \{ --fl-mt-c28rem: 2rem; \} @container \(width >= 28rem\) \{ \.\\@md\\:mt-8 \{ --fl-mt-cq: 1; margin-top: --fl-mt\(\); \}/)
+  assert.match(out, /@property --fl-mt-cq \{ syntax: "\*"; inherits: false; \}/)
   // a named container is a condition on the base token, as before
-  assert.match(out, /@container card \(width >= 28rem\) \{ \.\\@md\\\/card\\:mt-3 \{ --fl-margin-top-0: 0\.75rem; margin-top: --fl-margin-top\(\); \}/)
+  assert.match(out, /@container card \(width >= 28rem\) \{ \.\\@md\\\/card\\:mt-3 \{ --fl-mt-0: 0\.75rem; margin-top: --fl-mt\(\); \}/)
 })
 
 test('a container query mixed with a breakpoint stays a condition', async () => {
   const css = `.mt-4 { margin-top: 1rem } @container (width >= 32rem) { @media (width >= 48rem) { .\\@lg\\:md\\:mt-2 { margin-top: 0.5rem } } }`
   const out = flat(await appendix(css))
-  assert.match(out, /@container \(width >= 32rem\) \{ \.\\@lg\\:md\\:mt-2 \{ --fl-margin-top-48rem: 0\.5rem; \}/)
+  assert.match(out, /@container \(width >= 32rem\) \{ \.\\@lg\\:md\\:mt-2 \{ --fl-mt-48rem: 0\.5rem; \}/)
   assert.doesNotMatch(out, /--vc/)
 })
 
@@ -649,7 +649,7 @@ const publications = (css, selector, name) => {
 for (const [shape, css] of Object.entries(nestedVariants)) {
   test(`a breakpoint nested in the same breakpoint publishes the inner value last (${shape} output)`, async () => {
     const out = await run(css)
-    for (const [prop, inner] of [['font-size', '88px'], ['line-height', '96px']]) {
+    for (const [prop, inner] of [['fs', '88px'], ['lh', '96px']]) {
       const tokens = publications(out, '.md\\:h0', `--fl-${prop}-48rem`)
       // the inner value wins at md and up, as it does in plain Tailwind, and is
       // published without media so the band below can interpolate towards it
@@ -657,18 +657,18 @@ for (const [shape, css] of Object.entries(nestedVariants)) {
       for (const { media } of tokens) assert.deepEqual(media, [], prop)
     }
     // the merged `.h1, .md\\:h0` list still twins `.h1`
-    assert.deepEqual(publications(out, '.h1', '--fl-font-size-48rem'), [{ value: '64px', media: [] }])
+    assert.deepEqual(publications(out, '.h1', '--fl-fs-48rem'), [{ value: '64px', media: [] }])
   })
 
   test(`a breakpoint nested in a lower one publishes at the higher breakpoint (${shape} output)`, async () => {
     const out = await run(css)
-    assert.deepEqual(publications(out, '.md\\:h2', '--fl-font-size-48rem'), [{ value: '40px', media: [] }])
-    assert.deepEqual(publications(out, '.md\\:h2', '--fl-font-size-64rem'), [{ value: '56px', media: [] }])
+    assert.deepEqual(publications(out, '.md\\:h2', '--fl-fs-48rem'), [{ value: '40px', media: [] }])
+    assert.deepEqual(publications(out, '.md\\:h2', '--fl-fs-64rem'), [{ value: '56px', media: [] }])
   })
 
   test(`a max-width variant nested in a breakpoint stays a condition, after the outer value (${shape} output)`, async () => {
     const out = await run(css)
-    const tokens = publications(out, '.md\\:h3', '--fl-font-size-48rem')
+    const tokens = publications(out, '.md\\:h3', '--fl-fs-48rem')
     assert.equal(tokens.length, 2)
     assert.deepEqual(tokens[0], { value: '30px', media: [] })
     assert.equal(tokens[1].value, '20px')
@@ -735,14 +735,14 @@ for (const [shape, css] of Object.entries(scopeVariant)) {
     assert.ok(out.startsWith(css))
     const scope = /^@scope \(\.card\)$/
 
-    const base = placements(out, '.scoped\\:mt-2', '--fl-margin-top-0')
+    const base = placements(out, '.scoped\\:mt-2', '--fl-mt-0')
     assert.equal(base.length, 1)
     assert.equal(base[0].value, 'calc(var(--spacing) * 2)')
     assert.equal(base[0].at.length, 1)
     assert.match(base[0].at[0], scope)
 
     // the md token keeps the scope and drops only the breakpoint
-    const md = placements(out, '.md\\:scoped\\:mt-10', '--fl-margin-top-48rem')
+    const md = placements(out, '.md\\:scoped\\:mt-10', '--fl-mt-48rem')
     assert.equal(md.length, 1)
     assert.equal(md[0].value, 'calc(var(--spacing) * 10)')
     assert.equal(md[0].at.length, 1)
@@ -751,7 +751,7 @@ for (const [shape, css] of Object.entries(scopeVariant)) {
     // the property is handed over only under both the breakpoint and the scope
     const handed = placements(out, '.md\\:scoped\\:mt-10', 'margin-top')
     assert.equal(handed.length, 1)
-    assert.equal(handed[0].value, '--fl-margin-top()')
+    assert.equal(handed[0].value, '--fl-mt()')
     assert.equal(handed[0].at.length, 2)
     assert.match(handed[0].at[0], /^@media /)
     assert.match(handed[0].at[1], scope)
@@ -763,13 +763,13 @@ test('by default, percentages, viewport and container units are walls, not curve
   const css = `@layer utilities { .w-full { width: 100% } .w-12 { width: 3rem } .mt-\\[2vw\\] { margin-top: 2vw } .mt-4 { margin-top: 1rem }
     @media (width >= 48rem) { .md\\:w-1\\/2 { width: calc(1/2 * 100%) } .md\\:w-64 { width: 16rem } .md\\:mt-\\[50cqw\\] { margin-top: 50cqw } .md\\:mt-8 { margin-top: 2rem } } }`
   const out = flat(await appendix(css))
-  assert.doesNotMatch(out, /--fl-width-0: 100%|--fl-width-48rem: calc\(1\/2/)
+  assert.doesNotMatch(out, /--fl-w-0: 100%|--fl-w-48rem: calc\(1\/2/)
   // a fixed value at md re-asserts itself and walls off the band below
-  assert.match(out, /\.md\\:w-1\\\/2 \{ --fl-width-48rem-stop: 1; \}/)
+  assert.match(out, /\.md\\:w-1\\\/2 \{ --fl-w-48rem-stop: 1; \}/)
   assert.match(out, /\.md\\:w-1\\\/2 \{ width: calc\(1\/2 \* 100%\); \}/)
-  assert.match(out, /\.w-12 \{ --fl-width-0: 3rem;/)
+  assert.match(out, /\.w-12 \{ --fl-w-0: 3rem;/)
   assert.match(out, /\.mt-\\\[2vw\\\] \{ margin-top: 2vw; \}/)
-  assert.match(out, /--fl-margin-top-48rem-stop: 1/)
+  assert.match(out, /--fl-mt-48rem-stop: 1/)
 })
 
 test('by default, transforms, opacity and border widths step like Tailwind', async () => {
@@ -785,12 +785,12 @@ test('by default, transforms, opacity and border widths step like Tailwind', asy
   // opting in to transforms alone keeps the drawer's -100% a wall: it is a percentage
   const out = flat(await appendix(css, { include: 'transforms' }))
   assert.match(out, /\.-translate-x-full \{ --tw-translate-x: -100%; \}/)
-  assert.match(out, /\.lg\\:translate-x-0 \{ --fl-tw-translate-x-64rem: 0px; \}/)
+  assert.match(out, /\.lg\\:translate-x-0 \{ --fl-translate-x-64rem: 0px; \}/)
   assert.match(out, /--fl-rotate-64rem: 180deg/)
   assert.doesNotMatch(out, /--fl-opacity|--fl-border/)
   // 'all' turns every group on
   const all = flat(await appendix(css, { include: 'all' }))
-  for (const name of ['--fl-tw-translate-x-0: -100%', '--fl-opacity-64rem: 1', '--fl-border-width-64rem: 1px']) assert.ok(all.includes(name), name)
+  for (const name of ['--fl-translate-x-0: -100%', '--fl-opacity-64rem: 1', '--fl-border-64rem: 1px']) assert.ok(all.includes(name), name)
 })
 
 test('names the shared functions after their signature, so stylesheets on one page do not collide', async () => {
@@ -801,7 +801,7 @@ test('names the shared functions after their signature, so stylesheets on one pa
   const a = names(await build(md))
   const b = names(await build(smLg))
   assert.match(a[0], /^--fl_[0-9a-z]{5}$/)
-  assert.equal(a[1], `${a[0]}-margin-top`)
+  assert.equal(a[1], `${a[0]}-mt`)
   assert.notEqual(a[0], b[0])
   assert.notEqual(a[1], b[1])
   // the same breakpoints give the same names, whatever else the file holds
@@ -814,13 +814,13 @@ test('names the shared functions after their signature, so stylesheets on one pa
 test('accepts the obvious forms of each option', async () => {
   const css = `@layer utilities { .mt-6 { margin-top: 1.5rem } @media (width >= 48rem) { .md\\:mt-8 { margin-top: 2rem } } }`
   // a single layer name as a string
-  assert.match(await appendix(css, { layers: 'utilities' }), /--fl-margin-top-48rem/)
+  assert.match(await appendix(css, { layers: 'utilities' }), /--fl-mt-48rem/)
   // a bare number of pixels
   assert.match(await appendix(css, { minWidth: 320 }), /else: 320px\)/)
   assert.match(await appendix(css, { minWidth: '0' }), /else: 0px\)/)
   // a single property name as a string
-  assert.match(await appendix(css, { properties: 'margin-top' }), /--fl-margin-top-48rem/)
-  assert.doesNotMatch(await appendix(css, { exclude: 'margin-top' }), /--fl-margin-top/)
+  assert.match(await appendix(css, { properties: 'margin-top' }), /--fl-mt-48rem/)
+  assert.doesNotMatch(await appendix(css, { exclude: 'margin-top' }), /--fl-mt/)
   // postcss-load-config passes `true` or nothing for an option-less plugin
   assert.doesNotThrow(() => autofluid(true))
   assert.doesNotThrow(() => autofluid())
@@ -863,17 +863,17 @@ test('sr-only and not-sr-only are a switch: their lengths are fixed, under any v
   const out = flat(await appendix(css))
   // `width: 1px` at lg is not a value to bend towards: width has nothing responsive left
   assert.doesNotMatch(out, /--fl-(width|height|margin)-/)
-  assert.doesNotMatch(out, /--fl-padding-64rem:/)
+  assert.doesNotMatch(out, /--fl-p-64rem:/)
   // where a property is fluid, the switch is a wall at its breakpoint and its value is re-asserted
   for (const selector of ['.lg\\:sr-only', '.lg\\:not-sr-only', '.tw\\:lg\\:sr-only', '.dark\\:lg\\:sr-only:where(.dark, .dark *)']) {
-    assert.ok(out.includes(`${selector} { --fl-padding-64rem-stop: 1; }`), selector)
+    assert.ok(out.includes(`${selector} { --fl-p-64rem-stop: 1; }`), selector)
     assert.ok(out.includes(`${selector} { padding: 0; }`), selector)
   }
   assert.ok(out.includes('.sr-only { padding: 0; }'))
-  assert.ok(out.includes('.p-4 { --fl-padding-0: calc(var(--spacing) * 4); padding: --fl-padding(); }'))
+  assert.ok(out.includes('.p-4 { --fl-p-0: calc(var(--spacing) * 4); padding: --fl-p(); }'))
 })
 
 test('a class that merely contains sr-only in its name is read as usual', async () => {
   const css = `.sr-only-ish { width: 1rem } @media (width >= 48rem) { .md\\:sr-only-ish { width: 2rem } }`
-  assert.match(flat(await appendix(css)), /\.md\\:sr-only-ish \{ --fl-width-48rem: 2rem; \}/)
+  assert.match(flat(await appendix(css)), /\.md\\:sr-only-ish \{ --fl-w-48rem: 2rem; \}/)
 })

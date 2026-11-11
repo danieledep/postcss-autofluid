@@ -37,7 +37,7 @@ assembles whatever co-occurs on an element.
   it win precisely where the original would have won. The only thing stripped is
   the breakpoint media — and only from the token, never from the property.
 - One shared `@function --fl_<hash>(...)` for the math. One thin
-  `--fl_<hash>-<prop>()` wrapper per property. The hash is of the
+  `--fl_<hash>-<name>()` wrapper per property. The hash is of the
   interpolator's text, so stylesheets with the same breakpoints share names
   and stylesheets with different ones don't redefine each other (functions are
   page-global; verified in Chromium 153 that a later `--fl()` with other
@@ -50,6 +50,28 @@ assembles whatever co-occurs on an element.
   costs +16–24% over the wire (numbers in the README). The base twins are the
   floor: without knowing the markup there is no way to tell which base utility
   will share an element with a responsive one.
+- Tokens and wrappers are named after the property's short name, not the
+  property: `--fl-mt-48rem`, `--fl_<hash>-mt()`. `SHORT` in `lib/names.js`
+  is the table: Tailwind's names (`px`, `max-w`, `rounded-tl`, `gap-x`),
+  and `fs`, `lh`, `ls` for type, which Dan chose over `text`, `leading`,
+  `tracking` and over index names (`--fl-7-48rem`: 3 to 5 points smaller,
+  unreadable). A channel is `<name>` or `<name>-num` (`slug()` in
+  `index.js`). A property outside the table keeps its full name, and
+  `namer()` drops a short name when a listed property is really called
+  that (`--w` next to `width`), so two properties never share tokens.
+  The property name is written a few hundred times per build: measured
+  12 to 17% of the appendix minified.
+- A wrapper names only published tokens. The interpolator takes every
+  breakpoint and stop, but most properties speak at few of them (about
+  half the arguments were unpublished on real builds), and an unset
+  variable is the same guaranteed-invalid argument under any name
+  (assumption 1). The rest read `--<prefix>-0`, which nothing sets or
+  registers. `published` is the single source for both the wrappers and
+  the `@property` list, so the two cannot drift.
+- Passing ahead values as wrapper arguments instead of tokens plus clears
+  was measured (a further 14% minified on a token-driven build) and Dan
+  declined it. Merging handover declarations into selector lists was
+  measured too: 7 to 9% smaller minified, 5 to 10% larger after brotli.
 - Everything inside `@supports (top: --fl())` so non-supporting browsers get
   plain Tailwind. There is deliberately no degraded middle state.
 - Input arrives in two shapes. Tailwind flattens `@media { .sel { … } }` only
@@ -106,10 +128,10 @@ assembles whatever co-occurs on an element.
 - Tailwind composes translate and scale at runtime from per-axis variables
   (`translate: var(--tw-translate-x) var(--tw-translate-y)`), so those
   variables *are* the fluid properties: the twin sets
-  `--tw-scale-x: --fl_<hash>-tw-scale-x()` and Tailwind's own `scale:` declaration
+  `--tw-scale-x: --fl_<hash>-scale-x()` and Tailwind's own `scale:` declaration
   picks it up. Verified in Chromium: a custom function in a `syntax: "*"`
-  variable evaluates on the element. Names drop the leading dashes
-  (`slug()`). `isTokenOnly` therefore checks the `--<prefix>-` prefix, not
+  variable evaluates on the element. Their names are Tailwind's
+  (`scale-x`, `translate-y`; `lib/names.js`). `isTokenOnly` therefore checks the `--<prefix>-` prefix, not
   `--`, or a `--tw-*` value twin would count as inert and be skipped past.
   Transform functions (`--tw-rotate-x: rotateX(12deg)`) stay fixed.
 - Tokens belong to a *channel*: the property itself for lengths,
@@ -124,7 +146,7 @@ assembles whatever co-occurs on an element.
   picks the axis per element: `--cq` (a non-inherited flag set under a
   matching container query), else viewport tokens, else container tokens.
   Without container breakpoints the output has none of this.
-- A fixed value at a breakpoint is a wall. It publishes `--fl-<prop>-<bp>-stop`
+- A fixed value at a breakpoint is a wall. It publishes `--fl-<name>-<bp>-stop`
   (same conditions as a value token), and the interpolator's `--hi` checks
   `style(--s<bp>)` before `style(--v<bp>)` at each breakpoint above the band.
   Only boolean-form `style()` is used, the form verified below. A fixed base
@@ -205,7 +227,8 @@ assembles whatever co-occurs on an element.
 - Layout: `index.js` is the plugin (walk, channels, stops, twins);
   `lib/options.js` defaults and validation; `lib/values.js` value
   classification; `lib/context.js` selector and breakpoint reading;
-  `lib/variables.js` responsive root variables and their copies;
+  `lib/names.js` the short names; `lib/variables.js` responsive root
+  variables and their copies;
   `lib/interpolator.js` the shared function and its name.
 
 ## Things that looked fine and were not (all fixed, all covered by tests)
