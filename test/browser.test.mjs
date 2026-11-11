@@ -408,3 +408,46 @@ for (const optimize of [false, true]) test(`utilities that read responsive root 
     await browser.close()
   }
 })
+
+// `sr-only` hides an element and `not-sr-only` brings it back. Its 1px box
+// and -1px margin are a state, not a size to bend towards.
+const hiddenCases = {
+  w: ['w-24 lg:sr-only', 'width'], p: ['p-4 lg:sr-only', 'paddingTop'], m: ['m-4 lg:sr-only', 'marginTop'], h: ['h-10 lg:sr-only', 'height'],
+  px: ['px-4 lg:sr-only', 'paddingLeft'], back: ['sr-only lg:not-sr-only lg:p-4', 'paddingTop'], backm: ['sr-only lg:not-sr-only', 'marginTop'],
+  grow: ['sr-only md:w-40', 'width'], only: ['sr-only', 'width'], dark: ['w-24 dark:lg:sr-only', 'width'],
+  // the scale below the switch still runs, and holds from md until the switch
+  scale: ['p-4 md:p-8 lg:sr-only', 'paddingTop'],
+}
+const hiddenHtml = Object.entries(hiddenCases).map(([id, [cls]]) => `<div id="${id}" class="${cls}">x</div>`).join('')
+const hiddenClasses = [...new Set(Object.values(hiddenCases).flatMap(([cls]) => cls.split(' ')))]
+
+for (const optimize of [false, true]) test(`sr-only is a switch and steps like Tailwind (${optimize ? 'optimized' : 'dev'} output)`, { skip: !(playwright && tailwind) && !process.env.BROWSER_TEST && 'playwright or @tailwindcss/postcss not installed' }, async () => {
+  const source = `@import "tailwindcss" source(none); @source inline("${hiddenClasses.join(' ')}"); @custom-variant dark (&:where(.dark, .dark *));`
+  const plain = (await postcss([tailwind.default({ optimize })]).process(source, { from: 'app.css' })).css
+  const builds = {
+    defaults: (await postcss([autofluid()]).process(plain, { from: undefined })).css,
+    all: (await postcss([autofluid({ include: 'all' })]).process(plain, { from: undefined })).css,
+  }
+
+  const browser = await launch()
+  try {
+    const page = await browser.newPage()
+    const at = async (width, css) => {
+      await page.setViewportSize({ width, height: 400 })
+      await page.setContent(`<!doctype html><style>${css}</style><body class="dark">${hiddenHtml}</body>`)
+      return page.evaluate((cases) => Object.fromEntries(Object.entries(cases).map(([id, [, prop]]) => [id, getComputedStyle(document.getElementById(id))[prop]])), hiddenCases)
+    }
+    for (const [name, fluid] of Object.entries(builds)) {
+      for (const width of [320, 500, 700, 767, 768, 900, 1000, 1023, 1024, 1300]) {
+        const fl = await at(width, fluid)
+        const pl = await at(width, plain)
+        for (const id of Object.keys(hiddenCases)) {
+          if (id !== 'scale' || width >= 768) assert.equal(fl[id], pl[id], `${id} at ${width}px (${name})`)
+        }
+      }
+      assert.equal((await at(544, fluid)).scale, '24px', name) // 16px → 32px at md, as without the switch
+    }
+  } finally {
+    await browser.close()
+  }
+})

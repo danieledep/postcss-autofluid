@@ -36,7 +36,7 @@ const {
   ZERO, NUMBER_PROPS, RATIO_PROPS, PERCENT, ANGLE_PROPS, ANGLE_UNITS,
   components, footprint, themeOf, resolve, interpolable, numeric, ratio,
 } = require('./lib/values.js')
-const { UTILITY, MIN_WIDTH, BASE, contextOf } = require('./lib/context.js')
+const { UTILITY, SWITCH, MIN_WIDTH, BASE, contextOf } = require('./lib/context.js')
 const { variablesOf } = require('./lib/variables.js')
 const { interpolator, signature } = require('./lib/interpolator.js')
 
@@ -146,9 +146,10 @@ function autofluid(options) {
         const { prop, value, source } = node
         const vars = varsOf(node.parent)
         // A list the interpolator cannot take is kept as written, not tokenised.
+        const fixed = [{ prop, value, source, vars, channel: null }]
         const split = components(prop, value.trim())
         const kept = !split || split.some(([name]) => !fluidable.has(name))
-          ? [{ prop, value, source, vars, channel: null }]
+          ? fixed
           : split.flatMap(([name, part]) =>
               stepsOf({ prop: name, value: part, source, vars, channel: channelOf(name, part, vars) }, node.parent, context.width),
             )
@@ -162,7 +163,7 @@ function autofluid(options) {
             groups.set(path, group)
             found.push(group)
           }
-          group.decls.push(...kept)
+          group.decls.push(...(SWITCH.test(selector) ? fixed : kept))
         }
       })
 

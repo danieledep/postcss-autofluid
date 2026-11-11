@@ -130,6 +130,13 @@ assembles whatever co-occurs on an element.
   Only boolean-form `style()` is used, the form verified below. A fixed base
   value needs no stop. Bands with no stop above them keep the plain `var()`
   chain, so output without walls is byte-identical to before.
+- `sr-only` and `not-sr-only` are a switch (`SWITCH` in `lib/context.js`,
+  matched on the end of the class name so variants and prefixes are
+  covered). Every value they set is fixed: re-asserted, a wall at its
+  breakpoint, never a token, and never the reason a property turns fluid.
+  It is the one place a class name is read; the visually-hidden box
+  (`width: 1px`, `margin: -1px`, `padding: 0`) is otherwise
+  indistinguishable from a size.
 - `UTILITY` also accepts `:where(.cls > :not(:last-child))`, the child
   selector `space-x-*` and `space-y-*` use. It is zero-specificity like
   class-based `dark:`, and the twin mirrors it exactly. No other child
@@ -257,6 +264,11 @@ computed styles against plain Tailwind at a dozen widths:
   pill a few pixels above the base in production only. Lengths of `1e6` units
   or more (`HUGE`) are fixed.
 
+- `w-24 lg:sr-only` shrank to 4px just below lg, `p-4 lg:sr-only` lost its
+  padding on the way, and `sr-only md:w-40` was 136px wide (and still
+  clipped) at 700px. Found in a real project's output: `.lg\:sr-only`
+  published width, height, margin and padding tokens at 64rem. Hence
+  `SWITCH`.
 - `p-4 pt-2` rendered 16px on top in any build with a responsive `padding`
   and no responsive `padding-top`: `.pt-2` had no twin, and the twin of
   `.p-4`, appended after everything, overrode it. On main this hid behind
