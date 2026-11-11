@@ -91,6 +91,11 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
 ### Fixed
+- `sr-only` under a breakpoint was read as a scale. `w-24 lg:sr-only` shrank
+  towards 1px on the way to `lg`, `p-4 lg:sr-only` lost its padding, and
+  `sr-only md:w-40` was 136px wide at 700px while still hidden. `sr-only`
+  and `not-sr-only` are a switch: their values are now fixed, like a
+  keyword, under any variant or prefix.
 - `p-4 pt-2` rendered `padding-top: 1rem` whenever the build had a
   responsive `padding` but no responsive `padding-top`: the twin of `p-4`
   comes after everything Tailwind wrote, `pt-2` had no twin, and the

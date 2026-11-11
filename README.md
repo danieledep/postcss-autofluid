@@ -75,6 +75,8 @@ Everything else steps at its breakpoints exactly as in Tailwind. That includes p
 
 Each of those can be opted in with `include` (see [Options](#options)) when you do want the curve.
 
+`sr-only` and `not-sr-only` are a switch as well, under any variant: `w-24 lg:sr-only` stays 6rem wide up to `lg` instead of shrinking towards the 1px box that hides it. Their values are never interpolated.
+
 ### Keeping one element stepped
 
 There is no per-element switch. To keep a single utility out of the curve, mark it `!important` (`md:mt-8!`): important declarations are left alone, and the value steps at its breakpoint as in Tailwind. It also wins over every non-important `margin-top` on that element, so use it where that is what you want anyway. To keep a whole property stepped, list it in `exclude`.

@@ -844,3 +844,36 @@ test('throws a clear error for an option it cannot use', () => {
   throws({ prefix: 'fl_x' }, /`prefix` must be/)
   throws('fl', /options must be an object/)
 })
+
+test('sr-only and not-sr-only are a switch: their lengths are fixed, under any variant or prefix', async () => {
+  const hidden = 'position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px'
+  const shown = 'position: static; width: auto; height: auto; padding: 0; margin: 0'
+  const css = themed(`@layer utilities {
+    .sr-only { ${hidden} }
+    .w-24 { width: calc(var(--spacing) * 24) }
+    .p-4 { padding: calc(var(--spacing) * 4) }
+    @media (width >= 48rem) { .md\\:p-8 { padding: calc(var(--spacing) * 8) } }
+    @media (width >= 64rem) {
+      .lg\\:sr-only { ${hidden} }
+      .lg\\:not-sr-only { ${shown} }
+      .tw\\:lg\\:sr-only { ${hidden} }
+      .dark\\:lg\\:sr-only:where(.dark, .dark *) { ${hidden} }
+    }
+  }`)
+  const out = flat(await appendix(css))
+  // `width: 1px` at lg is not a value to bend towards: width has nothing responsive left
+  assert.doesNotMatch(out, /--fl-(width|height|margin)-/)
+  assert.doesNotMatch(out, /--fl-padding-64rem:/)
+  // where a property is fluid, the switch is a wall at its breakpoint and its value is re-asserted
+  for (const selector of ['.lg\\:sr-only', '.lg\\:not-sr-only', '.tw\\:lg\\:sr-only', '.dark\\:lg\\:sr-only:where(.dark, .dark *)']) {
+    assert.ok(out.includes(`${selector} { --fl-padding-64rem-stop: 1; }`), selector)
+    assert.ok(out.includes(`${selector} { padding: 0; }`), selector)
+  }
+  assert.ok(out.includes('.sr-only { padding: 0; }'))
+  assert.ok(out.includes('.p-4 { --fl-padding-0: calc(var(--spacing) * 4); padding: --fl-padding(); }'))
+})
+
+test('a class that merely contains sr-only in its name is read as usual', async () => {
+  const css = `.sr-only-ish { width: 1rem } @media (width >= 48rem) { .md\\:sr-only-ish { width: 2rem } }`
+  assert.match(flat(await appendix(css)), /\.md\\:sr-only-ish \{ --fl-width-48rem: 2rem; \}/)
+})
