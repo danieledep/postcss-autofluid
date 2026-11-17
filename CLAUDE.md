@@ -38,10 +38,11 @@ assembles whatever co-occurs on an element.
   the breakpoint media — and only from the token, never from the property.
 - One shared `@function --fl_<hash>(...)` for the math. One thin
   `--fl_<hash>-<name>()` wrapper per property. The hash is of the
-  interpolator's text, so stylesheets with the same breakpoints share names
-  and stylesheets with different ones don't redefine each other (functions are
-  page-global; verified in Chromium 153 that a later `--fl()` with other
-  parameters broke an earlier sheet's elements). Tokens and the
+  interpolator's text and of what every wrapper reads, so stylesheets with
+  the same functions share names and any others don't redefine each other
+  (functions are page-global; verified in Chromium 153 that a later `--fl()`
+  with other parameters broke an earlier sheet's elements, and in 157 that a
+  later wrapper reading other tokens did). Tokens and the
   `@supports (top: --fl())` check keep plain names. One
   `@property … inherits: false` per *published* token. Size stays near-linear in the number of distinct utilities, not exponential in
   breakpoints. Twins exist only for properties that have at least one responsive
@@ -79,6 +80,13 @@ assembles whatever co-occurs on an element.
   *inside* the rule. Both carry the same facts, so the walk starts at each
   declaration and climbs, which reads either. Never assume the breakpoint is an
   ancestor of the rule. Twins are always emitted flat.
+- A twin is per rule: the declarations of one rule node, for each lone
+  class in its selector. Nothing is merged by selector text, so a selector
+  that appears twice gets two twins, each in its place.
+- The plugin's own output is not input: a stylesheet that already holds
+  `@supports (top: --fl())` is returned untouched (double-configured
+  pipelines). A prebuilt sheet concatenated with fresh Tailwind output
+  therefore stays as it is, plain Tailwind for the fresh part.
 - Group reuse is run-local, not global: a chain is reused only while it is still
   the most recent thing at its level, ignoring inert token-only rules. Merging
   two non-contiguous uses of one chain moves a twin backwards past rules it must
@@ -108,8 +116,10 @@ assembles whatever co-occurs on an element.
   for any list, a number for a width is px. `units` (removed after 0.4) throws
   with a pointer to `include`.
 - Only lengths interpolate, plus unitless numbers on `NUMBER_PROPS`
-  (`line-height`). `interpolable()` resolves `var()` through root custom
-  properties (Tailwind emits used theme variables on `:root, :host`) and the
+  (`line-height`). `interpolable()` resolves `var()` through the root theme
+  (Tailwind emits used theme variables on `:root, :host`; `themeAt()` in
+  `lib/variables.js` is the one definition: the last root value at or
+  below a breakpoint, under no condition but `@layer`) and the
   rule's own custom properties (`space-y-*` sets `--tw-space-y-reverse`), and
   accepts arithmetic over the enabled units with at least one length.
   `calc()` mixes them, so the ends of a curve need not share a unit.
@@ -123,7 +133,9 @@ assembles whatever co-occurs on an element.
   README.
 - Three more value kinds, by property: `RATIO_PROPS` (`opacity`, `scale`,
   `--tw-scale-*`) take numbers and `%` on one channel, with each `N%`
-  published as `N/100` (the optimizer turns `opacity: 50%` into `.5`);
+  published as `N/100` (the optimizer turns `opacity: 50%` into `.5`; a
+  percentage behind a variable is resolved at build time for that, any
+  other variable stays live);
   `ANGLE_PROPS` (`rotate`, v3's `--tw-rotate`) take angles, zero as `0deg`.
 - Tailwind composes translate and scale at runtime from per-axis variables
   (`translate: var(--tw-translate-x) var(--tw-translate-y)`), so those
@@ -199,7 +211,9 @@ assembles whatever co-occurs on an element.
     each falls back through its copies below (`var(--c-48rem, var(--c-0))`)
     so the token always stands; otherwise an override that clears a copy
     takes the token with it and the value at that breakpoint is wrong.
-  - Only copies some token reads are emitted (`used`, closed over aliases).
+  - Only copies some published token reads are emitted: the twins collect
+    the values they publish through copies and hand them to `copies()`,
+    which closes over aliases. `at()` has no side effects.
   - Everything else stays live and steps as in Tailwind: a value that
     changes kind between breakpoints, container tokens, non-fluid
     properties, variables only non-root rules change. Fail towards plain
@@ -218,7 +232,9 @@ assembles whatever co-occurs on an element.
   longhand original sorted after it (`p-4 pt-2`). `footprint()` in
   `lib/values.js` names the sides, axes and corners a property sets; any
   rule whose property shares one with a fluid property gets a twin that
-  re-asserts its value, fluid or not.
+  re-asserts its value, fluid or not, listed or not: the walk reads every
+  property within reach of a listed one (`reach` in `index.js`), so
+  `exclude: 'padding-top'` cannot bring the override back.
 - No dependencies beyond `postcss`. Tests use `node:test`; the browser test
   skips itself when `playwright` / `@tailwindcss/postcss` are absent, unless
   `BROWSER_TEST` is set. CI has a `browser` job that installs them and sets
@@ -284,8 +300,8 @@ computed styles against plain Tailwind at a dozen widths:
   viewport token above it won. Hence the `--cq` flag.
 - The optimizer folds `rounded-full`'s `calc(infinity * 1px)` into
   `2147483647px`, which then interpolated: `rounded-sm md:rounded-full` was a
-  pill a few pixels above the base in production only. Lengths of `1e6` units
-  or more (`HUGE`) are fixed.
+  pill a few pixels above the base in production only. Tailwind 3 writes
+  `9999px`. Lengths of 9999 units or more (`HUGE`) are fixed.
 
 - `w-24 lg:sr-only` shrank to 4px just below lg, `p-4 lg:sr-only` lost its
   padding on the way, and `sr-only md:w-40` was 136px wide (and still
@@ -342,6 +358,24 @@ A value that reads several responsive variables always has a token at each of
 their breakpoints, cleared copies or not, so inside a scope that overrides
 one of them the curve can hold flat up to a breakpoint instead of running
 straight through it. Right at every breakpoint; only the shape differs.
+
+Breakpoints in `rem` assume the root font size is the browser's default: a
+media query measures `rem` and `em` against the initial font size, the
+function body against the root's and the element's. `html { font-size:
+62.5% }` gave 48px at 768px for `mt-4 md:mt-8 lg:mt-12` (Chromium 157), and
+`em` breakpoints bend the curve between breakpoints on any element with its
+own font size. Writing px into the math instead would break the more common
+case, a user's larger default font. Documented in the README gotchas.
+
+Reviewed and left alone, each a way to write CSS that Tailwind itself gets
+wrong or that fails towards plain Tailwind: breakpoints emitted out of
+ascending order (a v3 `screens` object out of order, which Tailwind's docs
+rule out); two breakpoints of one width under different spellings (`md:`
+with `min-[768px]:`) on one element and property; `minWidth` above the
+smallest breakpoint (wrong only below both widths); a two-value shorthand
+split into logical axes under a vertical writing mode (splitting into
+sides would stop `p-[1rem_2rem] md:py-8` from interpolating); an unlayered
+`[data-open] { margin-top: 0 }` after unlayered utilities losing to a twin.
 
 `max-md:p-xs` bends towards the variable's md value below md, though the
 class is off from md up: the ahead token is published under the rule's

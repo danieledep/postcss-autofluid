@@ -35,7 +35,7 @@
 const { NAME, normalize } = require('./lib/options.js')
 const {
   ZERO, NUMBER_PROPS, RATIO_PROPS, PERCENT, ANGLE_PROPS, ANGLE_UNITS,
-  components, footprint, themeOf, resolve, interpolable, numeric, ratio,
+  components, footprint, resolve, interpolable, numeric, ratio,
 } = require('./lib/values.js')
 const { UTILITY, SWITCH, MIN_WIDTH, BASE, contextOf } = require('./lib/context.js')
 const { namer } = require('./lib/names.js')
@@ -60,11 +60,22 @@ function autofluid(options) {
   // A root variable's value at a breakpoint: `--h1` is copied to `--fl--h1-48rem`.
   // The doubled dash keeps the copies clear of every token name.
   const copy = (variable, key) => `--${prefix}-${variable.slice(1)}-${key}`
+  // The function `@supports` asks for. Nothing defines it, so it is also the
+  // mark of a stylesheet that already has its appendix.
+  const probe = `--${prefix}()`
+  // Every side, axis and corner a fluid property sets (see the twins).
+  const reach = new Set([...fluidable].flatMap(footprint))
 
   return {
     postcssPlugin: NAME,
 
     OnceExit(root, { AtRule, Rule, Declaration, result }) {
+      // A stylesheet goes through once. Listed twice, or run by two
+      // pipelines, the plugin would read its own twins as utilities.
+      let done = false
+      root.walkAtRules('supports', (at) => { done ||= at.params.includes(probe) })
+      if (done) return
+
       // Which layers to read. The default is `@layer utilities`, where
       // Tailwind v4 puts every generated utility and every `@utility` block.
       // 'auto' reads that layer when the stylesheet has one and everything
@@ -87,8 +98,8 @@ function autofluid(options) {
         return false
       }
 
-      const theme = themeOf(root)
-      const variables = variablesOf(root, theme, copy)
+      const variables = variablesOf(root, copy)
+      const theme = variables.themeAt(BASE)
 
       // A rule's own custom properties are known for its declarations:
       // `space-y-*` multiplies by `--tw-space-y-reverse`, which the same rule
@@ -134,21 +145,31 @@ function autofluid(options) {
         return steps.map((s) => ({ ...s, text: variables.at(s.value, s.step), ahead: s.step !== width }))
       }
 
-      // Declarations that share a selector and an at-rule chain become one
-      // twin. `walkDecls` is document order and a Map keeps insertion order,
-      // so twins stay in their originals' relative order.
+      // The declarations of one rule become one twin for each of its
+      // selectors. `walkDecls` is document order, so twins stay in their
+      // originals' order, and a selector that comes back further down gets a
+      // twin there, not a place in its first one. Whatever shares a side with
+      // a fluid property is read too, as a value to keep (see `familiesOf`).
       const found = []
-      const groups = new Map()
+      const twins = new Map()
       root.walkDecls((node) => {
-        if (!fluidable.has(node.prop) || node.important) return
+        if (node.important || !footprint(node.prop).some((part) => reach.has(part))) return
         const context = contextOf(node)
         if (!context || !inScope(node)) return
 
         // Tailwind's optimizer merges neighbours with identical bodies into a
         // list (`.h1, .md\:h0 { … }`). A list is its selectors one after the
         // other, so each lone class in it is read as a rule of its own.
-        const { rule, ancestors } = context
-        const chainPath = ancestors.map((at) => `\n@${at.name} ${at.params}`).join('')
+        let groups = twins.get(node.parent)
+        if (!groups) {
+          groups = context.rule.selectors
+            .filter((selector) => UTILITY.test(selector))
+            .map((selector) => ({ ...context, selector, source: context.rule.source, decls: [] }))
+          twins.set(node.parent, groups)
+          found.push(...groups)
+        }
+        if (!groups.length) return
+
         const { prop, value, source } = node
         const vars = varsOf(node.parent)
         // A list the interpolator cannot take is kept as written, not tokenised.
@@ -159,18 +180,7 @@ function autofluid(options) {
           : split.flatMap(([name, part]) =>
               stepsOf({ prop: name, value: part, source, vars, channel: channelOf(name, part, vars) }, node.parent, context.width),
             )
-
-        for (const selector of rule.selectors) {
-          if (!UTILITY.test(selector)) continue
-          const path = selector + chainPath
-          let group = groups.get(path)
-          if (!group) {
-            group = { ...context, selector, source: rule.source, decls: [] }
-            groups.set(path, group)
-            found.push(group)
-          }
-          group.decls.push(...(SWITCH.test(selector) ? fixed : kept))
-        }
+        for (const group of groups) group.decls.push(...(SWITCH.test(group.selector) ? fixed : kept))
       })
 
       // A token family with no responsive value anywhere in the build has
@@ -185,7 +195,7 @@ function autofluid(options) {
       // Twins come after everything Tailwind wrote, so the twin of `p-4`
       // would override `pt-2`, which Tailwind sorts after it, unless `pt-2`
       // has a twin too. Whatever shares a side with a fluid property gets
-      // one, re-asserting its value as written.
+      // one, re-asserting its value as written, fluid property or not.
       const taken = new Set([...channelsOf.keys()].flatMap(footprint))
       const familiesOf = (prop) => channelsOf.get(prop) ?? (footprint(prop).some((part) => taken.has(part)) ? [] : null)
 
@@ -277,34 +287,30 @@ function autofluid(options) {
 
       const decl = (prop, value, source) => new Declaration({ prop, value, source })
 
-      // ── The shared interpolator, named after its signature ────────────────
-      const { keys, stops, params, body } = interpolator({ bps, cbps, stopKeys, minWidth, containerMinWidth, AtRule, decl })
-      const shared = new AtRule({ name: 'function', params: `--${prefix}(${params.join(', ')})`, nodes: body })
-      const fn = `--${prefix}_${signature(shared.toString())}`
-      shared.params = `${fn}(${params.join(', ')})`
-      const wrapper = (channel) => `${fn}-${slug(channel)}`
-
-      // ── One thin wrapper per token family, reading the element's tokens ───
+      // ── The shared interpolator, and one thin wrapper per token family ────
       // The interpolator takes every breakpoint; most families speak at few
       // of them. A token no rule publishes is the same nothing under any
       // name, so one short name stands in for all of them.
+      const { keys, stops, params, body } = interpolator({ bps, cbps, stopKeys, minWidth, containerMinWidth, AtRule, decl })
       const nothing = `--${prefix}-0`
       const read = (custom) => `var(${published.has(custom) ? custom : nothing})`
-      const wrappers = [...channels.keys()].map((channel) =>
-        new AtRule({
-          name: 'function',
-          params: `${wrapper(channel)}()`,
-          nodes: [
-            decl(
-              'result',
-              `${fn}(${[
-                ...keys.map((k) => read(token(channel, k))),
-                ...stops.map((k) => read(stop(channel, k))),
-                ...(cbps.length ? [read(inContainer(channel))] : []),
-              ].join(', ')})`,
-            ),
-          ],
-        }),
+      const reads = [...channels.keys()].map((channel) => [
+        slug(channel),
+        [
+          ...keys.map((k) => read(token(channel, k))),
+          ...stops.map((k) => read(stop(channel, k))),
+          ...(cbps.length ? [read(inContainer(channel))] : []),
+        ].join(', '),
+      ])
+
+      // Functions are global to the page, so all of them are named after
+      // everything they say: the interpolator and what each wrapper reads.
+      const shared = new AtRule({ name: 'function', params: `--${prefix}(${params.join(', ')})`, nodes: body })
+      const fn = `--${prefix}_${signature(shared.toString() + reads.join())}`
+      shared.params = `${fn}(${params.join(', ')})`
+      const wrapper = (channel) => `${fn}-${slug(channel)}`
+      const wrappers = reads.map(([name, tokens]) =>
+        new AtRule({ name: 'function', params: `${fn}-${name}()`, nodes: [decl('result', `${fn}(${tokens})`)] }),
       )
 
       // Tokens must not inherit, or a parent's breakpoint value would leak into
@@ -320,7 +326,7 @@ function autofluid(options) {
 
       const supports = new AtRule({
         name: 'supports',
-        params: `(top: --${prefix}())`,
+        params: `(top: ${probe})`,
         nodes: [shared, ...wrappers, ...registrations],
       })
 
@@ -356,6 +362,7 @@ function autofluid(options) {
         return parent
       }
 
+      const copied = new Set()
       for (const { selector, source, width, ancestors, conditions, decls } of found) {
         const tokens = []
         const values = []
@@ -372,8 +379,9 @@ function autofluid(options) {
             // one that is set again somewhere may be a length there, and
             // stays live.
             const zero = channel === prop && (text || variables.constant(value)) && ZERO.test(resolve(value, vars) ?? '')
-            const published = RATIO_PROPS.has(prop) ? ratio(value, vars) : zero ? (ANGLE_PROPS.has(prop) ? '0deg' : '0px') : text ?? value
+            const published = RATIO_PROPS.has(prop) ? ratio(value, vars, text) : zero ? (ANGLE_PROPS.has(prop) ? '0deg' : '0px') : text ?? value
             tokens.push(decl(token(channel, step.key), published, source))
+            if (text) copied.add(value)
             if (ahead) continue
             if (width.axis === 'cq') values.push(decl(inContainer(channel), '1', source))
             else held.set(channel, source)
@@ -404,8 +412,8 @@ function autofluid(options) {
       // cascade then settles each copy the way it settles the variable at
       // that width (see lib/variables.js). Nothing reads a copy but the
       // tokens, so where these sit among the twins does not matter, only
-      // among themselves.
-      for (const { node, chain, copies } of variables.copies()) {
+      // among themselves, and only those the published tokens read exist.
+      for (const { node, chain, copies } of variables.copies(copied)) {
         let parent = supports
         for (const { type, selector, name, params, source } of chain) {
           const last = parent.last

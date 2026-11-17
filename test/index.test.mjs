@@ -804,9 +804,18 @@ test('names the shared functions after their signature, so stylesheets on one pa
   assert.equal(a[1], `${a[0]}-mt`)
   assert.notEqual(a[0], b[0])
   assert.notEqual(a[1], b[1])
-  // the same breakpoints give the same names, whatever else the file holds
+  // the same functions get the same names, whatever values the file holds
   const c = names(await build(md.replace('2rem', '3rem')))
   assert.deepEqual(c, a)
+  // a wrapper reads only the tokens its stylesheet publishes, so the same
+  // breakpoints with other tokens are other functions
+  const lg = (first, second) => `@layer utilities { .${first}-4 { ${first === 'mt' ? 'margin' : 'padding'}-top: 1rem }
+    @media (width >= 48rem) { .md\\:${first}-8 { ${first === 'mt' ? 'margin' : 'padding'}-top: 2rem } }
+    @media (width >= 64rem) { .lg\\:${second}-8 { ${second === 'mt' ? 'margin' : 'padding'}-top: 2rem } } }`
+  const d = await build(lg('mt', 'pt'))
+  const e = await build(lg('pt', 'mt'))
+  assert.equal(unhash(d).match(/@function --fl\([^)]*\)/)[0], unhash(e).match(/@function --fl\([^)]*\)/)[0])
+  assert.ok(names(d).every((name) => !names(e).includes(name)))
   // the feature check keeps its plain name
   assert.match(await build(md), /@supports \(top: --fl\(\)\)/)
 })
@@ -876,4 +885,46 @@ test('sr-only and not-sr-only are a switch: their lengths are fixed, under any v
 test('a class that merely contains sr-only in its name is read as usual', async () => {
   const css = `.sr-only-ish { width: 1rem } @media (width >= 48rem) { .md\\:sr-only-ish { width: 2rem } }`
   assert.match(flat(await appendix(css)), /\.md\\:sr-only-ish \{ --fl-w-48rem: 2rem; \}/)
+})
+
+test('a selector that comes back further down gets its twin there', async () => {
+  // plain CSS gives `.a.b` 2rem: the second `.a` comes after `.b`
+  const css = `@layer utilities { .a { padding: 1rem } .b { padding: 3rem } .a { padding: 2rem }
+    @media (width >= 48rem) { .md\\:p-8 { padding: 4rem } } }`
+  const out = flat(await appendix(css))
+  assert.match(out, /\.a \{ --fl-p-0: 1rem; padding: --fl-p\(\); \} \.b \{ --fl-p-0: 3rem; padding: --fl-p\(\); \} \.a \{ --fl-p-0: 2rem; padding: --fl-p\(\); \}/)
+})
+
+test('a property left out of the list still keeps its place after a fluid shorthand', async () => {
+  const css = `@layer utilities { .p-4 { padding: 1rem } .pt-2 { padding-top: 0.5rem } .mt-2 { margin-top: 0.5rem }
+    @media (width >= 48rem) { .md\\:p-8 { padding: 2rem } } }`
+  for (const opts of [{ exclude: 'padding-top' }, { properties: 'padding' }]) {
+    const out = flat(await appendix(css, opts))
+    // re-asserted as written, after the twin of `.p-4`
+    assert.match(out, /\.p-4 \{ --fl-p-0: 1rem; padding: --fl-p\(\); \} \.pt-2 \{ padding-top: 0\.5rem; \}/)
+    assert.doesNotMatch(out, /--fl-pt|\.mt-2/)
+  }
+})
+
+test('splits a shorthand written over several lines', async () => {
+  const css = `@layer utilities { .card { padding: 1rem\n2rem } @media (width >= 48rem) { .md\\:p-8 { padding: 2rem } } }`
+  const out = flat(await appendix(css))
+  assert.match(out, /\.card \{ padding-block: 1rem; padding-inline: 2rem; \}/)
+})
+
+test('treats Tailwind 3 rounded-full as fixed', async () => {
+  const css = `.rounded-sm { border-radius: 0.125rem } .w-4 { width: 1rem }
+    @media (min-width: 768px) { .md\\:rounded-full { border-radius: 9999px } .md\\:w-8 { width: 2rem } }`
+  const out = flat(await appendix(css))
+  assert.doesNotMatch(out, /--fl-rounded/)
+})
+
+test('leaves a stylesheet it has already been through as it is', async () => {
+  const css = `@layer utilities { .mt-6 { margin-top: 1.5rem } @media (width >= 48rem) { .md\\:mt-8 { margin-top: 2rem } } }`
+  const once = (await postcss([autofluid()]).process(css, { from: undefined })).css
+  assert.equal((await postcss([autofluid()]).process(once, { from: undefined })).css, once)
+  assert.equal((await postcss([autofluid(), autofluid()]).process(css, { from: undefined })).css, once)
+  // minified in between
+  const tight = once.replace(/\s+/g, '')
+  assert.equal((await postcss([autofluid()]).process(tight, { from: undefined })).css, tight)
 })

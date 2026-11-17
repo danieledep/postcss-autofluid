@@ -212,8 +212,9 @@ test('numbers, ratios and angles follow their variable like lengths do', async (
     @media (width >= 48rem) { :root { --lh: 1.5; --o: 1; --r: 90deg; } }
     .leading-lh { line-height: var(--lh) } .opacity-o { opacity: var(--o) } .rotate-r { rotate: var(--r) }`, { include: 'all' })
   assert.deepEqual(rule(out, '.leading-lh'), ['.leading-lh { --fl-lh-num-0: var(--fl--lh-0); --fl-lh-num-48rem: var(--fl--lh-48rem); line-height: --fl-lh-num(); }'])
-  // a ratio is published as the number it stands for, so it is read at build time
-  assert.deepEqual(rule(out, '.opacity-o'), ['.opacity-o { --fl-opacity-0: 0.2; --fl-opacity-48rem: 1; opacity: --fl-opacity(); }'])
+  // a percentage is published as the number it stands for, so behind a
+  // variable it is read at build time; a number follows its copy
+  assert.deepEqual(rule(out, '.opacity-o'), ['.opacity-o { --fl-opacity-0: 0.2; --fl-opacity-48rem: var(--fl--o-48rem); opacity: --fl-opacity(); }'])
   // a bare zero is no angle inside calc()
   assert.deepEqual(rule(out, '.rotate-r'), ['.rotate-r { --fl-rotate-0: 0deg; --fl-rotate-48rem: var(--fl--r-48rem); rotate: --fl-rotate(); }'])
 })
@@ -301,4 +302,25 @@ test('a longhand that shares a side with a fluid shorthand is re-asserted, so th
   assert.match(out, /@media \(prefers-color-scheme: dark\) \{ \.dark\\:pt-4 \{ padding-top: 1rem; \}; \}/)
   // another family is nobody's business
   assert.deepEqual(rule(out, '.mt-2'), [])
+})
+
+test('copies only what a published token reads, not what a skipped rule reads', async () => {
+  const out = await appendix(`:root { --h1: 64px } @media (width >= 48rem) { :root { --h1: 96px } .md\\:mt-8 { margin-top: 2rem } }
+    .mt-4 { margin-top: 1rem } .card .title { font-size: var(--h1) } .mt-6\\! { margin-top: var(--h1) !important }`)
+  assert.match(out, /--fl-mt-48rem: 2rem/)
+  assert.doesNotMatch(out, /--fl--/)
+})
+
+test('a ratio behind a variable follows its copies, overrides included', async () => {
+  const out = await appendix(`:root { --o: 0.2 } @media (width >= 48rem) { :root { --o: 0.8 } }
+    .section { --o: 1 } .opacity-o { opacity: var(--o) }`, { include: 'opacity' })
+  assert.deepEqual(rule(out, '.opacity-o'), ['.opacity-o { --fl-opacity-0: var(--fl--o-0); --fl-opacity-48rem: var(--fl--o-48rem); opacity: --fl-opacity(); }'])
+  assert.deepEqual(rule(out, '.section'), ['.section { --fl--o-0: 1; --fl--o-48rem: initial; }'])
+})
+
+test('the root theme is what the cascade leaves on the root: the last value, under no condition', async () => {
+  // a keyword first, or under a condition, does not make the variable a keyword
+  const out = await appendix(`@media print { :root { --gap: auto } } :root { --gap: auto } :root { --gap: 1rem }
+    .mt-gap { margin-top: var(--gap) } @media (width >= 48rem) { .md\\:mt-8 { margin-top: 2rem } }`)
+  assert.deepEqual(rule(out, '.mt-gap'), ['.mt-gap { --fl-mt-0: var(--gap); margin-top: --fl-mt(); }'])
 })
