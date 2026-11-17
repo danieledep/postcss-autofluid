@@ -87,7 +87,8 @@ There is no per-element switch. To keep a single utility out of the curve, mark 
 - **A theme variable set outside the stylesheet.** Utilities that read a [variable the root changes per breakpoint](#theme-variables-that-change-at-a-breakpoint) follow the values the stylesheet gives it. One set through a `style` attribute, from JavaScript, or in a stylesheet built separately (a component's scoped styles, say) is not seen, and those utilities keep following the stylesheet's values. Set it in a rule the plugin processes, or mark the utility `!important` to keep it reading the live variable.
 - **Viewport and container breakpoints on one property.** With `mt-4 md:mt-8 @md:mt-12` every value is right at every breakpoint, but the step into the container value is not interpolated.
 - **Percentage heights, once opted in.** When the parent's height is auto, a percentage can't resolve and the browser treats the *whole* value as auto, `3rem` and all. So in an auto-height parent, `h-12 md:h-1/2` is auto below `md` too, where plain Tailwind keeps `3rem`. Give the parent a height, or use `vh`/`dvh`.
-- **Several Tailwind builds on one page.** Each stylesheet names its functions after its own breakpoints, so two builds on one page don't overwrite each other's curves. Builds that both define the *same* utility still override each other in source order, as they do without this plugin.
+- **Several Tailwind builds on one page.** Each stylesheet names its functions after its own breakpoints and tokens, so two builds on one page don't overwrite each other's curves. Builds that both define the *same* utility still override each other in source order, as they do without this plugin.
+- **A root font size other than the browser's.** A breakpoint in `rem` or `em` is measured against the browser's default font size in a media query, and against the root's (`rem`) or the element's own (`em`) inside the curve. With `html { font-size: 62.5% }`, or `em` breakpoints, the curve runs over the wrong widths. Write those breakpoints, and `minWidth`, in `px`.
 - **Browsers.** Chromium renders the fluid sizes, Firefox and Safari render plain Tailwind. Expect different sizes between breakpoints when comparing screenshots across browsers.
 
 ## How it works
@@ -126,7 +127,7 @@ A twin mirrors its original exactly (same selector, same at-rule ancestors, laye
 
 The plugin never needs to know which classes share an element. Each class contributes one uniquely named token; the browser's cascade assembles whichever tokens happen to co-occur; the interpolator walks `var()` fallbacks to the nearest defined token below and above the current viewport, reads their widths with `if(style())`, and interpolates. A single token means the upper end falls back to the lower one and the value is the plain one.
 
-The `_k3x9a` suffix is a short hash of the interpolator's signature. Custom functions are global to the page, so it keeps two stylesheets with different breakpoints from redefining each other's functions.
+The `_k3x9a` suffix is a short hash of the functions themselves: the interpolator and what each wrapper reads. Custom functions are global to the page, so it keeps two stylesheets with different breakpoints or different tokens from redefining each other's functions.
 
 Why not a Tailwind plugin? Because inside Tailwind's plugin API the breakpoint is known to the variant and the property to the utility, and neither can see the other. Tailwind's output is the first place both facts sit on the same node. See [the write-up](https://dan-webnotes.com/posts/2025-07-02-generate-fluid-styles-tailwind-plugin/) for the earlier attempts.
 
@@ -258,7 +259,7 @@ A ratio never meets a length. In `text-sm/6 md:text-lg`, `1.5rem` holds up to `m
 
 `transforms` without `percentages` interpolates `translate-x-4 md:translate-x-12` but keeps `-translate-x-full` a wall, since `full` is a percentage.
 
-`exclude` is the way to drop a few properties and keep the rest: `exclude: ['max-width']` keeps Tailwind's `container` stepping at its breakpoints. Names are exact, so excluding `padding` leaves `padding-top` and the other longhands fluid. `properties` replaces the default list instead; `include` and `exclude` apply on top of either.
+`exclude` is the way to drop a few properties and keep the rest: `exclude: ['max-width']` keeps Tailwind's `container` stepping at its breakpoints. Names are exact, so excluding `padding` leaves `padding-top` and the other longhands fluid, and excluding `padding-top` leaves `pt-2` stepping and still winning over `p-4`. `properties` replaces the default list instead; `include` and `exclude` apply on top of either.
 
 `layers` defaults to `['utilities']`, where Tailwind 4 puts every generated utility and your `@utility` blocks. Add `'components'` to make your own component classes fluid too: a component's fixed value then curves towards a responsive utility on the same element, and stays fixed without one. Tailwind 3 output has no layers, so pass `layers: null` (every rule) or `'auto'` (utilities when the stylesheet has that layer, every rule otherwise); if responsive values exist but none of the listed layers does, the plugin warns.
 

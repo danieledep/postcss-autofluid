@@ -18,7 +18,10 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   19% off the appended CSS minified, 12 to 14% after brotli.
 - A wrapper names only the tokens some rule publishes. Every wrapper passed
   one argument per breakpoint and stop, though most properties speak at few
-  of them; the rest now read one shared, never-set name (`--fl-0`).
+  of them; the rest now read one shared, never-set name (`--fl-0`). The
+  hash in the function names covers what the wrappers read as well, so
+  two stylesheets with the same breakpoints and other tokens do not
+  redefine each other's wrappers.
 - Renamed to `postcss-autofluid` (was `postcss-fluid-variants`). The plugin
   adds no variants: it makes the responsive utilities you already write
   fluid, automatically.
@@ -129,8 +132,31 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   number. A value with a top-level `/` is now fixed and kept as written.
 - `rounded-sm md:rounded-full` was fully round almost from the base in
   production builds, where the optimizer folds `calc(infinity * 1px)` into
-  `2147483647px` and that was interpolated. Lengths of a million units or
-  more are now fixed.
+  `2147483647px` and that was interpolated. Tailwind 3 writes `9999px`,
+  which did the same. Lengths of 9999 units or more are now fixed.
+- A selector that appears twice (`.a { … } .b { … } .a { … }`) had both
+  rules merged into one twin at the first one's place, so the second no
+  longer came after what sat between them and lost to it. Each rule now
+  gets its own twin, in its own place.
+- Leaving a longhand out (`exclude: 'padding-top'`, `properties: 'padding'`)
+  brought back the `p-4 pt-2` override above: only listed properties were
+  read, so `pt-2` had no twin to re-assert it. Whatever shares a side with
+  a listed property is now read, and kept as written.
+- A shorthand whose values sit on separate lines (`padding: 1rem⏎2rem`) was
+  read as one value, and the padding was lost. Any whitespace separates.
+- Running the plugin over its own output (listed twice, or in two
+  pipelines) read the twins as utilities and appended a second, broken
+  appendix. A stylesheet that already has one is left as it is.
+- `opacity` and `scale` that read a root variable ignored its overrides
+  (`.section { --o: 1 }`): the value was resolved at build time. It stays
+  live now, as for lengths; only a percentage behind a variable is still
+  resolved, since a token has to be a number.
+- Copies of a responsive root variable were emitted when the only rule
+  reading it was one the plugin skips (`.card .title`, `!important`).
+- A root variable declared more than once was classified by its first
+  value, conditions included (`@media print { :root { --gap: auto } }`
+  before the real one made `--gap` a keyword). The theme is now what the
+  cascade leaves on the root: the last value under no condition.
 - A custom `@utility` with its own `@variant md`, used as `md:`, rendered the
   outer value from md up: the nested value's token was published under a
   redundant media query and then overridden by the outer one. Min-width
