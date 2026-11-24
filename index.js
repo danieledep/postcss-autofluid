@@ -34,7 +34,7 @@
 
 const { NAME, normalize } = require('./lib/options.js')
 const {
-  ZERO, NUMBER_PROPS, RATIO_PROPS, PERCENT, ANGLE_PROPS, ANGLE_UNITS,
+  ZERO, NUMBER_PROPS, RATIO_PROPS, WEIGHT_PROPS, PERCENT, ANGLE_PROPS, ANGLE_UNITS,
   components, footprint, resolve, interpolable, numeric, ratio,
 } = require('./lib/values.js')
 const { UTILITY, SWITCH, MIN_WIDTH, BASE, contextOf } = require('./lib/context.js')
@@ -126,6 +126,7 @@ function autofluid(options) {
       const channelOf = (prop, value, vars) => {
         if (RATIO_PROPS.has(prop)) return numeric(value, vars) || interpolable(value, vars, PERCENT) ? prop : null
         if (ANGLE_PROPS.has(prop)) return interpolable(value, vars, ANGLE_UNITS) ? prop : null
+        if (WEIGHT_PROPS.has(prop)) return numeric(value, vars) ? prop : null
         if (interpolable(value, vars, units)) return prop
         return NUMBER_PROPS.has(prop) && numeric(value, vars) ? `${prop}-num` : null
       }
@@ -378,7 +379,7 @@ function autofluid(options) {
             // (`--spacing-none: 0`), where the variable is that everywhere:
             // one that is set again somewhere may be a length there, and
             // stays live.
-            const zero = channel === prop && (text || variables.constant(value)) && ZERO.test(resolve(value, vars) ?? '')
+            const zero = channel === prop && !WEIGHT_PROPS.has(prop) && (text || variables.constant(value)) && ZERO.test(resolve(value, vars) ?? '')
             const published = RATIO_PROPS.has(prop) ? ratio(value, vars, text) : zero ? (ANGLE_PROPS.has(prop) ? '0deg' : '0px') : text ?? value
             tokens.push(decl(token(channel, step.key), published, source))
             if (text) copied.add(value)

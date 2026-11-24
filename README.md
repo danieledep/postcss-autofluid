@@ -64,7 +64,7 @@ By default, only **type and spacing in absolute or font-relative lengths** (`px`
 - widths and heights with their min and max, `flex-basis`
 - border radii
 
-Everything else steps at its breakpoints exactly as in Tailwind. That includes percentages, viewport and container units, transforms, opacity and border widths, because a responsive value there is as often a switch between two states as a scale:
+Everything else steps at its breakpoints exactly as in Tailwind. That includes percentages, viewport and container units, transforms, opacity, border widths and font weights, because a responsive value there is as often a switch between two states as a scale:
 
 | Pattern | Intent | If it were fluid |
 |---|---|---|
@@ -137,7 +137,7 @@ Three fences decide what the plugin touches, so it stays out of everything that 
 
 **Layer.** By default only `@layer utilities` is read. Tailwind 4 puts generated utilities and your own `@utility` blocks there; `@layer components`, `@layer base` and unlayered hand-written CSS are not touched unless you list them in `layers`. Tailwind 3 output is unlayered, so it needs `layers: null` (see Options).
 
-**Property.** The type and spacing list above, plus whatever `include` adds: `borders` (border widths by side, axis and logical side, `divide-x-*` / `divide-y-*`, `outline-width`, `outline-offset`), `transforms` (`rotate`, `scale`, and translate and scale through the per-axis variables Tailwind composes them from: `--tw-translate-x`, `--tw-scale-y`, …; Tailwind 3's `--tw-rotate` too) and `opacity`.
+**Property.** The type and spacing list above, plus whatever `include` adds: `borders` (border widths by side, axis and logical side, `divide-x-*` / `divide-y-*`, `outline-width`, `outline-offset`), `transforms` (`rotate`, `scale`, and translate and scale through the per-axis variables Tailwind composes them from: `--tw-translate-x`, `--tw-scale-y`, …; Tailwind 3's `--tw-rotate` too), `opacity` and `font-weight`.
 
 **Value.** Before deciding, the plugin resolves `var()` through the theme variables Tailwind emits on `:root` (and your own root variables), so `calc(var(--spacing) * 8)` or `var(--text-xl)` is known to be `2rem` or `1.25rem` at build time. Then:
 
@@ -145,6 +145,7 @@ Three fences decide what the plugin touches, so it stays out of everything that 
 - interpolated once opted in: percentages (`percentages`: `w-full`, `w-1/2`, `-translate-x-full`), viewport units (`viewport-units`: `w-screen`, `mt-[2vw]`), container units (`container-units`: `w-[50cqw]`)
 - interpolated against each other, never against a length: unitless `line-height` values, the ratios `text-*` sets (`text-sm md:text-lg`), `leading-none`, `leading-tight`
 - with `transforms`: angles on `rotate` (`rotate-0 md:rotate-90`, `rotate-[0.25turn]`) and ratios on `scale`; with `opacity`: ratios on `opacity`. A percentage and a number are the same ratio, so Tailwind's `opacity-50` and the optimizer's `.5` always meet
+- with `font-weight`: numeric weights (`font-light md:font-black`, `font-[350]`), which a variable font renders at every step in between. A static font shows its nearest face, so the text still steps, just not at your breakpoints. `bold` and `bolder` are keywords and stay as written
 - kept as written: keywords (`auto`, `none`, `fit-content`…), units that are not opted in, unitless numbers on any other property, variables that can't be resolved at build time (`mt-(--gap)` with `--gap` set somewhere other than the root), and transform functions (`rotate-x-*`, `skew-*`, which Tailwind writes as `rotateX(…)` inside a variable)
 
 A kept value at a breakpoint is a wall, and so is a value of the other kind (a length where ratios interpolate, or the reverse). In `w-64 md:w-fit lg:w-96` the width stays `16rem` up to `md`, is `fit-content` from `md` to `lg`, and is `24rem` above (exactly Tailwind) rather than bending towards `24rem` below `md`. The twin publishes a stop token at `md` that the interpolator checks before looking further up. The same holds for `w-64 md:w-full lg:w-96` unless `percentages` is opted in.
@@ -256,6 +257,7 @@ A ratio never meets a length. In `text-sm/6 md:text-lg`, `1.5rem` holds up to `m
 | `borders` | border widths and `outline-width`, `outline-offset` |
 | `transforms` | translate, scale and rotate |
 | `opacity` | `opacity` |
+| `font-weight` | `font-weight`, for variable fonts |
 
 `transforms` without `percentages` interpolates `translate-x-4 md:translate-x-12` but keeps `-translate-x-full` a wall, since `full` is a percentage.
 

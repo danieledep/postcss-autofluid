@@ -772,6 +772,34 @@ test('by default, percentages, viewport and container units are walls, not curve
   assert.match(out, /--fl-mt-48rem-stop: 1/)
 })
 
+test('with font-weight opted in, interpolates numeric weights and keeps keywords fixed', async () => {
+  const css = `@layer theme { :root, :host { --font-weight-normal: 400; --font-weight-bold: 700 } }
+  @layer utilities {
+    .font-normal { --tw-font-weight: var(--font-weight-normal); font-weight: var(--font-weight-normal) }
+    .font-\\[350\\] { font-weight: 350 } .font-\\[bold\\] { font-weight: bold }
+    @media (width >= 48rem) {
+      .md\\:font-bold { --tw-font-weight: var(--font-weight-bold); font-weight: var(--font-weight-bold) }
+      .md\\:font-\\[650\\] { font-weight: 650 }
+    }
+    @media (width >= 64rem) { .lg\\:font-\\[bolder\\] { font-weight: bolder } }
+  }`
+  // off by default: weights step like Tailwind
+  assert.equal(await run(css), css)
+  const out = flat(await appendix(css, { include: 'font-weight' }))
+  // the theme variable stays live in the token, as for every other value
+  assert.match(out, /\.font-normal \{ --fl-fw-0: var\(--font-weight-normal\); font-weight: --fl-fw\(\); \}/)
+  assert.match(out, /\.md\\:font-bold \{ --fl-fw-48rem: var\(--font-weight-bold\); \}/)
+  assert.match(out, /\.font-\\\[350\\\] \{ --fl-fw-0: 350;/)
+  assert.match(out, /\.md\\:font-\\\[650\\\] \{ --fl-fw-48rem: 650; \}/)
+  // Tailwind's own variable is left to Tailwind
+  assert.doesNotMatch(out, /--fl-tw-font-weight|--tw-font-weight: --fl/)
+  // a keyword is a value to keep, and a wall where it sits at a breakpoint
+  assert.match(out, /\.font-\\\[bold\\\] \{ font-weight: bold; \}/)
+  assert.match(out, /--fl-fw-64rem-stop: 1/)
+  // a weight is never a length: no 0px, no px anywhere in its tokens
+  assert.doesNotMatch(out, /--fl-fw-[^:]*: [^;]*px/)
+})
+
 test('by default, transforms, opacity and border widths step like Tailwind', async () => {
   // an off-canvas drawer, a show-on-desktop element and a border that appears
   const css = `@layer utilities {
@@ -846,7 +874,7 @@ test('throws a clear error for an option it cannot use', () => {
   throws({ minWidth: '20' }, /`minWidth` must be a length/)
   throws({ minWidth: '20vw' }, /`minWidth` must be a length/)
   throws({ containerMinWidth: -1 }, /`containerMinWidth` must be a length/)
-  throws({ include: ['transform'] }, /unknown group 'transform' in `include`\. Groups: percentages, viewport-units, container-units, borders, transforms, opacity, all/)
+  throws({ include: ['transform'] }, /unknown group 'transform' in `include`\. Groups: percentages, viewport-units, container-units, borders, transforms, opacity, font-weight, all/)
   throws({ layers: 42 }, /`layers` must be a string or an array of strings/)
   throws({ properties: [''] }, /`properties` must be a string or an array of strings/)
   throws({ prefix: 'f l' }, /`prefix` must be letters, digits and dashes/)
