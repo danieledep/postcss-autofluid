@@ -6,6 +6,8 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-24
+
 ### Changed
 - Tokens and wrappers carry a short name for their property instead of the
   property itself: `--fl-mt-48rem` and `--fl_k3x9a-mt()` for `margin-top`.
@@ -244,7 +246,8 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Initial release: responsive Tailwind utilities become fluid by appending
   twins that feed a shared `@function` interpolator inside `@supports`.
 
-[Unreleased]: https://github.com/danieledep/postcss-autofluid/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/danieledep/postcss-autofluid/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/danieledep/postcss-autofluid/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/danieledep/postcss-autofluid/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/danieledep/postcss-autofluid/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/danieledep/postcss-autofluid/compare/v0.2.0...v0.2.1
