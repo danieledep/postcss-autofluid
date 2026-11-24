@@ -37,8 +37,6 @@ It reads your built CSS, so there is nothing to configure: custom breakpoints, a
 
 ## Install
 
-> Not published to npm yet. The commands below are how it will install once it is.
-
 ```sh
 npm install -D postcss-autofluid
 ```
