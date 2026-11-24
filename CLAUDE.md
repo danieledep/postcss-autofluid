@@ -108,7 +108,7 @@ assembles whatever co-occurs on an element.
   `w-full md:w-1/2`), and interpolating a switch shows states Tailwind never
   does. Everything else is an opt-in group in `GROUPS` (`include`):
   `percentages`, `viewport-units`, `container-units` add units; `borders`,
-  `transforms`, `opacity` add properties; `all` is every group. There is no
+  `transforms`, `opacity`, `font-weight` add properties; `all` is every group. There is no
   per-element opt-out by design; `!important` is the documented escape
   hatch, `exclude` the per-property one.
 - Options are validated in `normalize()` and a bad one throws at creation
@@ -116,7 +116,7 @@ assembles whatever co-occurs on an element.
   for any list, a number for a width is px. `units` (removed after 0.4) throws
   with a pointer to `include`.
 - Only lengths interpolate, plus unitless numbers on `NUMBER_PROPS`
-  (`line-height`). `interpolable()` resolves `var()` through the root theme
+  (`line-height`) and the kinds below. `interpolable()` resolves `var()` through the root theme
   (Tailwind emits used theme variables on `:root, :host`; `themeAt()` in
   `lib/variables.js` is the one definition: the last root value at or
   below a breakpoint, under no condition but `@layer`) and the
@@ -131,12 +131,16 @@ assembles whatever co-occurs on an element.
   `h-12 md:h-1/2` there is auto below md where Tailwind keeps 3rem. Dan chose
   this over keeping `%` fixed on those properties; it is documented in the
   README.
-- Three more value kinds, by property: `RATIO_PROPS` (`opacity`, `scale`,
+- Four more value kinds, by property: `RATIO_PROPS` (`opacity`, `scale`,
   `--tw-scale-*`) take numbers and `%` on one channel, with each `N%`
   published as `N/100` (the optimizer turns `opacity: 50%` into `.5`; a
   percentage behind a variable is resolved at build time for that, any
   other variable stays live);
-  `ANGLE_PROPS` (`rotate`, v3's `--tw-rotate`) take angles, zero as `0deg`.
+  `ANGLE_PROPS` (`rotate`, v3's `--tw-rotate`) take angles, zero as `0deg`;
+  `WEIGHT_PROPS` (`font-weight`, short name `fw`) take plain numbers on
+  the property's own channel, never published as `0px`. Keywords stay
+  fixed. Verified in Chromium: `font-light md:font-black` computes 600
+  halfway.
 - Tailwind composes translate and scale at runtime from per-axis variables
   (`translate: var(--tw-translate-x) var(--tw-translate-y)`), so those
   variables *are* the fluid properties: the twin sets

@@ -37,6 +37,7 @@ const classes = [
   'border-2 md:border-8', 'border-x-2 md:border-x-8', 'divide-x-2 md:divide-x-8', 'outline-2 md:outline-8', 'outline-offset-2 md:outline-offset-8',
   'translate-x-4 md:translate-x-12', 'h-10 -translate-y-2 md:translate-y-1/2', 'scale-100 md:scale-150', 'scale-x-50 md:scale-x-150',
   'scale-[1.2] md:scale-[1.6]', 'rotate-0 md:rotate-90', '-rotate-12 md:rotate-45', 'opacity-20 md:opacity-100', 'opacity-[.2] md:opacity-80',
+  'font-light md:font-black', 'font-[350] md:font-[650]',
 ]
 
 // Custom utilities with variants of their own: `md:h0` nests md inside md.
@@ -82,6 +83,8 @@ const html = `
   <div id="q2" class="-rotate-12 md:rotate-45"></div>
   <div id="op1" class="opacity-20 md:opacity-100"></div>
   <div id="op2" class="opacity-[.2] md:opacity-80"></div>
+  <p id="fw1" class="font-light md:font-black"></p>
+  <p id="fw2" class="font-[350] md:font-[650]"></p>
   <div id="m1" class="mt-6 md:mt-auto lg:mt-12"></div>
   <p id="l1" class="leading-6 md:leading-none"></p>
   <div class="relative" style="padding: 40px"><span id="z1" class="absolute top-0 left-0"></span></div>
@@ -105,7 +108,7 @@ const html = `
   <div id="cq3" class="mt-4 @md:mt-8"></div>
 `
 
-const PROP = { c: 'paddingLeft', i: 'fontSize', w1: 'width', w2: 'width', u1: 'width', u2: 'width', u3: 'height', u4: 'height', u5: 'top', b1: 'borderTopWidth', b2: 'borderLeftWidth', dv: 'borderRightWidth', o1: 'outlineWidth', o2: 'outlineOffset', t1: 'translate', t2: 'ty', k1: 'scale', k2: 'scale', k3: 'scale', q1: 'rotate', q2: 'rotate', op1: 'opacity', op2: 'opacity', l1: 'lineHeight', z1: 'top', n0: 'fontSize', n0l: 'lineHeight', n2: 'fontSize', n3: 'fontSize', r1: 'borderTopLeftRadius', r2: 'borderTopLeftRadius', r3: 'borderTopLeftRadius', r4: 'borderTopLeftRadius', s1: 'marginLeft', lh: 'lineHeight', lh2: 'lineHeight', sp: 'marginBottom', spl: 'marginBottom' }
+const PROP = { c: 'paddingLeft', i: 'fontSize', w1: 'width', w2: 'width', u1: 'width', u2: 'width', u3: 'height', u4: 'height', u5: 'top', b1: 'borderTopWidth', b2: 'borderLeftWidth', dv: 'borderRightWidth', o1: 'outlineWidth', o2: 'outlineOffset', t1: 'translate', t2: 'ty', k1: 'scale', k2: 'scale', k3: 'scale', q1: 'rotate', q2: 'rotate', op1: 'opacity', op2: 'opacity', fw1: 'fontWeight', fw2: 'fontWeight', l1: 'lineHeight', z1: 'top', n0: 'fontSize', n0l: 'lineHeight', n2: 'fontSize', n3: 'fontSize', r1: 'borderTopLeftRadius', r2: 'borderTopLeftRadius', r3: 'borderTopLeftRadius', r4: 'borderTopLeftRadius', s1: 'marginLeft', lh: 'lineHeight', lh2: 'lineHeight', sp: 'marginBottom', spl: 'marginBottom' }
 
 const read = (PROP) =>
   Object.fromEntries(
@@ -209,10 +212,12 @@ for (const optimize of [false, true]) test(`computed styles match Tailwind at br
     assert.equal(mid.q2, '16.5deg') // -12deg → 45deg
     assert.equal(mid.op1, '0.6') // 20% → 100%
     assert.equal(mid.op2, '0.5') // .2 → 80%: a number and a percentage meet
+    assert.equal(mid.fw1, '600') // 300 → 900, through Tailwind's theme variables
+    assert.equal(mid.fw2, '500')
 
     // With the defaults, everything outside type and spacing steps exactly
     // like Tailwind at every width, while lengths still interpolate.
-    const optIn = ['w1', 'u1', 'u2', 'u3', 'u4', 'u5', 'b1', 'b2', 'dv', 'o1', 'o2', 't1', 't2', 'k1', 'k2', 'k3', 'q1', 'q2', 'op1', 'op2']
+    const optIn = ['w1', 'u1', 'u2', 'u3', 'u4', 'u5', 'b1', 'b2', 'dv', 'o1', 'o2', 't1', 't2', 'k1', 'k2', 'k3', 'q1', 'q2', 'op1', 'op2', 'fw1', 'fw2']
     for (const width of [320, 544, 767, 768, 900, 1100, 1536]) {
       const fl = await at(width, defaults)
       const pl = await at(width, plain)

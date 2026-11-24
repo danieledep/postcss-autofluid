@@ -57,6 +57,12 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   'container-units']` replaces it.
 
 ### Added
+- An opt-in `font-weight` group: `font-light md:font-black` passes through
+  600 on the way, for variable fonts. Numeric weights, written or behind a
+  theme variable (`--font-weight-bold`), interpolate on their own channel
+  (`--fl-fw-*`); keywords (`bold`, `bolder`) stay fixed and are walls. Off
+  by default, since a static font snaps to its nearest face. `include:
+  'all'` turns it on too.
 - Root variables redefined per breakpoint make the utilities that read them
   fluid: with `:root { --h1: 64px; @variant md { --h1: 96px } }`,
   `font-size: var(--h1)` interpolates as if the utility held the variant
