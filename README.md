@@ -21,7 +21,7 @@ Every value is exactly Tailwind's at every breakpoint; only the widths in betwee
 
 It reads your built CSS, so there is nothing to configure: custom breakpoints, arbitrary values, your own `@utility` blocks and container queries all work, and so do Tailwind 3 and hand-written single-class rules inside `min-width` media queries (with `layers: null`). Browsers without CSS custom functions (currently everything but Chromium) get your original stepped values.
 
-**[See it running →](https://danieledep.github.io/fluid-variants-site/)** Every size on that page is plain responsive Tailwind.
+**[See it running →](https://danieledep.github.io/autofluid-site/)** Every size on that page is plain responsive Tailwind.
 
 ## Contents
 
