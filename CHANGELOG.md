@@ -6,6 +6,13 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-26
+
+### Fixed
+- The npm homepage link points to the renamed site,
+  https://danieledep.github.io/autofluid-site/. 0.5.0 still linked to the old
+  `fluid-variants-site` address.
+
 ## [0.5.0] - 2026-11-24
 
 ### Changed
@@ -246,7 +253,8 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Initial release: responsive Tailwind utilities become fluid by appending
   twins that feed a shared `@function` interpolator inside `@supports`.
 
-[Unreleased]: https://github.com/danieledep/postcss-autofluid/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/danieledep/postcss-autofluid/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/danieledep/postcss-autofluid/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/danieledep/postcss-autofluid/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/danieledep/postcss-autofluid/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/danieledep/postcss-autofluid/compare/v0.2.1...v0.3.0
